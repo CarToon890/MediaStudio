@@ -1,0 +1,167 @@
+<UserControl x:Class="MediaStudio.Views.DownloaderView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:viewmodels="clr-namespace:MediaStudio.ViewModels"
+             mc:Ignorable="d" 
+             d:DataContext="{d:DesignInstance Type=viewmodels:DownloaderViewModel}"
+             d:DesignHeight="700" d:DesignWidth="900">
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,20">
+            <ui:TextBlock Text="Media Downloader" FontTypography="Title" />
+            <ui:TextBlock Text="ดาวน์โหลดวิดีโอและเพลงคุณภาพสูงจาก YouTube, TikTok, Facebook, Twitter และอื่นๆ" 
+                          Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,4,0,0" />
+        </StackPanel>
+
+        <!-- URL Input Card -->
+        <Border Grid.Row="1" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" 
+                CornerRadius="8" Padding="16" Margin="0,0,0,16" BorderThickness="1" 
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <ui:TextBox Grid.Column="0" Text="{Binding UrlInput, UpdateSourceTrigger=PropertyChanged}" 
+                                PlaceholderText="วางลิงก์วิดีโอที่นี่ (https://...)" 
+                                Margin="0,0,12,0" VerticalAlignment="Center">
+                        <ui:TextBox.InputBindings>
+                            <KeyBinding Key="Return" Command="{Binding FetchInfoCommand}" />
+                        </ui:TextBox.InputBindings>
+                    </ui:TextBox>
+
+                    <ui:Button Grid.Column="1" Content="วางลิงก์" Icon="{ui:SymbolIcon Symbol=ClipboardPaste24}" 
+                               Command="{Binding PasteClipboardCommand}" Margin="0,0,8,0" VerticalAlignment="Center" />
+
+                    <ui:Button Grid.Column="2" Content="ดึงข้อมูล" Appearance="Primary" Icon="{ui:SymbolIcon Symbol=Search24}"
+                               Command="{Binding FetchInfoCommand}" VerticalAlignment="Center" />
+                </Grid>
+
+                <!-- Status Text & Options -->
+                <Grid Grid.Row="1" Margin="0,16,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,20,0">
+                        <ui:TextBlock Text="ความละเอียด:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <ComboBox ItemsSource="{Binding QualityOptions}" SelectedItem="{Binding SelectedQuality}" Width="130" />
+                    </StackPanel>
+
+                    <CheckBox Grid.Column="1" Content="ดึงเฉพาะเสียง (MP3)" IsChecked="{Binding IsAudioOnly}" 
+                              VerticalAlignment="Center" Margin="0,0,20,0" />
+
+                    <ui:TextBlock Grid.Column="2" Text="{Binding StatusText}" VerticalAlignment="Center" 
+                                  Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+
+                    <ui:Button Grid.Column="3" Content="เริ่มดาวน์โหลด" Appearance="Success" Icon="{ui:SymbolIcon Symbol=ArrowDownload24}"
+                               Command="{Binding StartDownloadCommand}" IsEnabled="{Binding IsLoadingInfo, Converter={StaticResource InverseBooleanConverter}}" />
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- Preview Info Card (if loaded) -->
+        <Border Grid.Row="2" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" 
+                CornerRadius="8" Padding="16" Margin="0,0,0,16" BorderThickness="1" 
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                Visibility="{Binding HasMediaInfo, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Image Grid.Column="0" Source="{Binding CurrentMediaInfo.ThumbnailUrl}" Width="160" Height="90" Stretch="UniformToFill" Margin="0,0,16,0" />
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <ui:TextBlock Text="{Binding CurrentMediaInfo.Title}" FontTypography="Subtitle" TextWrapping="Wrap" MaxHeight="50" />
+                    <ui:TextBlock Text="{Binding CurrentMediaInfo.Author, StringFormat='ผู้สร้าง: {0}'}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,4,0,0" />
+                    <ui:TextBlock Text="{Binding CurrentMediaInfo.DurationFormatted, StringFormat='ความยาว: {0}'}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Download Queue / History List -->
+        <Border Grid.Row="3" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" 
+                CornerRadius="8" Padding="16" BorderThickness="1" 
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <ui:TextBlock Grid.Row="0" Text="รายการดาวน์โหลด (Queue &amp; History)" FontTypography="Subtitle" Margin="0,0,0,12" />
+
+                <ListBox Grid.Row="1" ItemsSource="{Binding DownloadQueue}" Background="Transparent" BorderThickness="0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="6" Padding="12" Margin="0,0,0,8">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Title & Stats -->
+                                    <StackPanel Grid.Row="0" Grid.Column="0">
+                                        <ui:TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                        <ui:TextBlock Text="{Binding StatusMessage}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />
+                                    </StackPanel>
+
+                                    <!-- Actions -->
+                                    <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
+                                        <ui:Button Icon="{ui:SymbolIcon Symbol=Play24}" ToolTip="เปิดเล่นไฟล์ทันที" 
+                                                   Appearance="Primary"
+                                                   Command="{Binding DataContext.PlayItemCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" 
+                                                   CommandParameter="{Binding}" Margin="0,0,4,0"
+                                                   Visibility="{Binding IsCompleted, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                        <ui:Button Icon="{ui:SymbolIcon Symbol=Stop24}" ToolTip="ยกเลิกการดาวน์โหลด" 
+                                                   Appearance="Danger"
+                                                   Command="{Binding DataContext.CancelTaskCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" 
+                                                   CommandParameter="{Binding}" Margin="0,0,4,0"
+                                                   Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                        <ui:Button Icon="{ui:SymbolIcon Symbol=FolderOpen24}" ToolTip="เปิดโฟลเดอร์" 
+                                                   Command="{Binding DataContext.OpenOutputFolderCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" 
+                                                   CommandParameter="{Binding}" Margin="0,0,4,0" />
+                                        <ui:Button Icon="{ui:SymbolIcon Symbol=Dismiss24}" ToolTip="ลบรายการ" 
+                                                   Command="{Binding DataContext.RemoveItemCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" 
+                                                   CommandParameter="{Binding}" />
+                                    </StackPanel>
+
+                                    <!-- Progress Bar -->
+                                    <ProgressBar Grid.Row="1" Grid.ColumnSpan="2" Value="{Binding Progress}" Maximum="100" Height="6" Margin="0,8,0,0" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

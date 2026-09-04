@@ -1,0 +1,247 @@
+<UserControl x:Class="MediaStudio.Views.TrimmerView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:viewmodels="clr-namespace:MediaStudio.ViewModels"
+             mc:Ignorable="d" 
+             d:DataContext="{d:DesignInstance Type=viewmodels:TrimmerViewModel}"
+             d:DesignHeight="700" d:DesignWidth="900">
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,20">
+            <ui:TextBlock Text="Lossless Video Trimmer" FontTypography="Title" />
+            <ui:TextBlock Text="ตัดต่อคลิปวิดีโอแบบทันใจใน 1 วินาที โดยไม่เสียคุณภาพต้นฉบับและไม่ต้องรอเรนเดอร์ใหม่" 
+                          Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,4,0,0" />
+        </StackPanel>
+
+        <!-- File Selection Card -->
+        <Border Grid.Row="1" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" 
+                CornerRadius="8" Padding="16" Margin="0,0,0,16" BorderThickness="1" 
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                    <ui:TextBlock Text="{Binding FileName, TargetNullValue='ยังไม่ได้เลือกไฟล์วิดีโอ', FallbackValue='ยังไม่ได้เลือกไฟล์วิดีโอ'}" 
+                                  FontTypography="Subtitle" TextTrimming="CharacterEllipsis" />
+                    <ui:TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,4,0,0" />
+                </StackPanel>
+
+                <ui:Button Grid.Column="1" Content="เลือกไฟล์วิดีโอ..." Icon="{ui:SymbolIcon Symbol=FolderOpen24}" 
+                           Appearance="Primary" Command="{Binding SelectFileCommand}" VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <!-- Main Trimmer Area -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="440" />
+                <ColumnDefinition Width="20" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Left Column: Video Preview Player & Player Controls -->
+            <Border Grid.Column="0" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" 
+                    CornerRadius="8" Padding="16" BorderThickness="1" 
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="240" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <ui:TextBlock Grid.Row="0" Text="ตัวอย่างวิดีโอ (Video Preview)" FontWeight="SemiBold" Margin="0,0,0,10" />
+
+                    <!-- Player Screen -->
+                    <Border Grid.Row="1" Background="#0A0A0A" CornerRadius="6" ClipToBounds="True">
+                        <Grid>
+                            <MediaElement x:Name="PreviewPlayer" 
+                                          Source="{Binding SourceFilePath}" 
+                                          LoadedBehavior="Manual" 
+                                          ScrubbingEnabled="True" 
+                                          MediaOpened="PreviewPlayer_MediaOpened" 
+                                          MediaEnded="PreviewPlayer_MediaEnded" 
+                                          Stretch="Uniform" />
+                            
+                            <!-- Placeholder if no file loaded -->
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                                        Visibility="{Binding HasLoadedFile, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                                <ui:SymbolIcon Symbol="Video24" FontSize="36" Foreground="{DynamicResource TextFillColorTertiaryBrush}" HorizontalAlignment="Center" />
+                                <ui:TextBlock Text="เลือกไฟล์เพื่อรับชมตัวอย่าง" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,8,0,0" HorizontalAlignment="Center" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Player Controls Bar -->
+                    <StackPanel Grid.Row="2" Margin="0,12,0,0">
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Play/Pause Toggle -->
+                            <ui:Button Grid.Column="0" Command="{Binding TogglePlayCommand}" 
+                                       IsEnabled="{Binding HasLoadedFile}" Padding="12,6" Margin="0,0,8,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Play24" Margin="0,0,4,0" 
+                                                   Visibility="{Binding IsPlaying, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+                                    <ui:SymbolIcon Symbol="Pause24" Margin="0,0,4,0" 
+                                                   Visibility="{Binding IsPlaying, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                    <ui:TextBlock Text="{Binding IsPlaying, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=invert, FallbackValue='เล่น/หยุด'}" />
+                                </StackPanel>
+                            </ui:Button>
+
+                            <!-- Position Time Display -->
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
+                                <ui:TextBlock Text="เวลาปัจจุบัน: " Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <ui:TextBlock Text="{Binding CurrentPositionFormatted}" FontWeight="Bold" Foreground="{DynamicResource SystemAccentColorLight2Brush}" />
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Quick Marker Buttons -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <ui:Button Grid.Column="0" Content="📍 ตั้งเป็นจุดเริ่มต้น (Start)" 
+                                       Command="{Binding SetStartToCurrentCommand}" 
+                                       IsEnabled="{Binding HasLoadedFile}" 
+                                       HorizontalAlignment="Stretch" Margin="0,0,4,0" />
+
+                            <ui:Button Grid.Column="1" Content="🏁 ตั้งเป็นจุดสิ้นสุด (End)" 
+                                       Command="{Binding SetEndToCurrentCommand}" 
+                                       IsEnabled="{Binding HasLoadedFile}" 
+                                       HorizontalAlignment="Stretch" Margin="4,0,0,0" />
+                        </Grid>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Right Column: Trim Sliders & Action Buttons -->
+            <Border Grid.Column="2" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" 
+                    CornerRadius="8" Padding="20" BorderThickness="1" 
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Time Summary Badges -->
+                    <Grid Grid.Row="0" Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.Column="0" Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="6" Padding="12" Margin="0,0,4,0">
+                            <StackPanel HorizontalAlignment="Center">
+                                <ui:TextBlock Text="เวลาเริ่ม (Start)" Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="11" />
+                                <ui:TextBlock Text="{Binding StartTimeFormatted}" FontWeight="Bold" FontSize="15" Margin="0,2,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Grid.Column="1" Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="6" Padding="12" Margin="2,0,2,0">
+                            <StackPanel HorizontalAlignment="Center">
+                                <ui:TextBlock Text="เวลาจบ (End)" Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="11" />
+                                <ui:TextBlock Text="{Binding EndTimeFormatted}" FontWeight="Bold" FontSize="15" Margin="0,2,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Grid.Column="2" Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="6" Padding="12" Margin="4,0,0,0">
+                            <StackPanel HorizontalAlignment="Center">
+                                <ui:TextBlock Text="ความยาวหลังตัด" Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="11" />
+                                <ui:TextBlock Text="{Binding TrimDurationFormatted}" FontWeight="Bold" FontSize="15" Margin="0,2,0,0" Foreground="{DynamicResource SystemAccentColorLight2Brush}" />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+
+                    <!-- Slider 1: Start Time -->
+                    <StackPanel Grid.Row="1" Margin="0,0,0,14">
+                        <Grid Margin="0,0,0,4">
+                            <ui:TextBlock Text="จุดเริ่มต้น (Start Time):" FontWeight="SemiBold" HorizontalAlignment="Left" />
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <ui:Button Content="ข้ามไปจุดนี้" Icon="{ui:SymbolIcon Symbol=ChevronRight16}" 
+                                           Command="{Binding SeekToStartCommand}" Padding="6,2" Margin="0,0,6,0" FontSize="11" />
+                                <ui:TextBlock Text="{Binding StartTimeFormatted}" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            </StackPanel>
+                        </Grid>
+                        <Slider Minimum="0" Maximum="{Binding TotalSeconds}" Value="{Binding StartSeconds}" 
+                                ValueChanged="StartSlider_ValueChanged"
+                                TickFrequency="1" IsSnapToTickEnabled="False" IsEnabled="{Binding HasLoadedFile}" />
+                    </StackPanel>
+
+                    <!-- Slider 2: End Time -->
+                    <StackPanel Grid.Row="2" Margin="0,0,0,16">
+                        <Grid Margin="0,0,0,4">
+                            <ui:TextBlock Text="จุดสิ้นสุด (End Time):" FontWeight="SemiBold" HorizontalAlignment="Left" />
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <ui:Button Content="ข้ามไปจุดนี้" Icon="{ui:SymbolIcon Symbol=ChevronRight16}" 
+                                           Command="{Binding SeekToEndCommand}" Padding="6,2" Margin="0,0,6,0" FontSize="11" />
+                                <ui:TextBlock Text="{Binding EndTimeFormatted}" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            </StackPanel>
+                        </Grid>
+                        <Slider Minimum="0" Maximum="{Binding TotalSeconds}" Value="{Binding EndSeconds}" 
+                                ValueChanged="EndSlider_ValueChanged"
+                                TickFrequency="1" IsSnapToTickEnabled="False" IsEnabled="{Binding HasLoadedFile}" />
+                    </StackPanel>
+
+                    <!-- Options -->
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,0,0,16">
+                        <CheckBox Content="ดึงเฉพาะเสียง (Extract Audio as MP3)" 
+                                  IsChecked="{Binding ExtractAudioOnly}" IsEnabled="{Binding HasLoadedFile}" Margin="0,0,16,0" />
+                        <ui:TextBlock Text="⚡ โหมด Lossless Cut (ตัดทันใจใน 1 วินาที)" 
+                                      Foreground="{DynamicResource SystemAccentColorLight2Brush}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <!-- Status Text -->
+                    <ui:TextBlock Grid.Row="4" Text="{Binding StatusText}" VerticalAlignment="Center" 
+                                  Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12" />
+
+                    <!-- Action Buttons -->
+                    <Grid Grid.Row="5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <ui:Button Grid.Column="0" Content="เปิดดูคลิปที่เพิ่งตัด" Appearance="Primary" Icon="{ui:SymbolIcon Symbol=Play24}" 
+                                   Command="{Binding PlayLastTrimmedCommand}" 
+                                   Visibility="{Binding HasLastTrimmedPath, Converter={StaticResource BooleanToVisibilityConverter}}" 
+                                   HorizontalAlignment="Left" Margin="0,0,8,0" />
+
+                        <ui:Button Grid.Column="1" Content="เปิดโฟลเดอร์" Icon="{ui:SymbolIcon Symbol=FolderOpen24}" 
+                                   Command="{Binding OpenLastTrimmedFolderCommand}" Margin="0,0,8,0" 
+                                   Visibility="{Binding HasLastTrimmedPath, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+                        <ui:Button Grid.Column="2" Content="เริ่มตัดคลิปทันที" Appearance="Success" Icon="{ui:SymbolIcon Symbol=Cut24}" 
+                                   Command="{Binding StartTrimCommand}" 
+                                   IsEnabled="{Binding HasLoadedFile}" 
+                                   Padding="20,10" />
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>
