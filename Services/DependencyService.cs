@@ -75,7 +75,17 @@ public class DependencyService
                         if (entry.Name.Equals("ffmpeg.exe", StringComparison.OrdinalIgnoreCase))
                         {
                             var targetFf = Path.Combine(_binDirectory, "ffmpeg.exe");
-                            entry.ExtractToFile(targetFf, true);
+                            var partialFf = targetFf + "." + Guid.NewGuid().ToString("N") + ".partial";
+                            try
+                            {
+                                entry.ExtractToFile(partialFf);
+                                ct.ThrowIfCancellationRequested();
+                                File.Move(partialFf, targetFf, true);
+                            }
+                            finally
+                            {
+                                if (File.Exists(partialFf)) File.Delete(partialFf);
+                            }
                             FFmpegPath = targetFf;
                             break;
                         }
@@ -106,22 +116,37 @@ public class DependencyService
 
         var totalBytes = response.Content.Headers.ContentLength ?? -1L;
         await using var contentStream = await response.Content.ReadAsStreamAsync(ct);
-        await using var fileStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true);
-
-        var buffer = new byte[8192];
-        var totalRead = 0L;
-        int bytesRead;
-
-        while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, ct)) > 0)
+        var partialPath = destinationPath + "." + Guid.NewGuid().ToString("N") + ".partial";
+        try
         {
-            await fileStream.WriteAsync(buffer, 0, bytesRead, ct);
-            totalRead += bytesRead;
-
-            if (totalBytes > 0)
+            await using (var fileStream = new FileStream(partialPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 8192, true))
             {
-                var percentage = (double)totalRead / totalBytes * 100;
-                DownloadProgressChanged?.Invoke(name, percentage);
+                var buffer = new byte[8192];
+                var totalRead = 0L;
+                int bytesRead;
+
+                while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, ct)) > 0)
+                {
+                    await fileStream.WriteAsync(buffer, 0, bytesRead, ct);
+                    totalRead += bytesRead;
+
+                    if (totalBytes > 0)
+                    {
+                        var percentage = (double)totalRead / totalBytes * 100;
+                        DownloadProgressChanged?.Invoke(name, percentage);
+                    }
+                }
+
+                if (totalBytes >= 0 && totalRead != totalBytes)
+                    throw new IOException("ดาวน์โหลดไฟล์เอนจินไม่ครบ");
             }
+
+            ct.ThrowIfCancellationRequested();
+            File.Move(partialPath, destinationPath, true);
+        }
+        finally
+        {
+            if (File.Exists(partialPath)) File.Delete(partialPath);
         }
     }
 

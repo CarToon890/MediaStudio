@@ -75,12 +75,7 @@ public class FFmpegService
 
             var baseName = Path.GetFileNameWithoutExtension(item.SourceFilePath);
             var ext = item.TargetFormat.ToLowerInvariant();
-            var outputFilePath = Path.Combine(outputFolder, $"{baseName}_converted.{ext}");
-
-            if (string.Equals(Path.GetFullPath(item.SourceFilePath), Path.GetFullPath(outputFilePath), StringComparison.OrdinalIgnoreCase))
-            {
-                outputFilePath = Path.Combine(outputFolder, $"{baseName}_converted_{DateTime.Now:yyyyMMddHHmmss}.{ext}");
-            }
+            var outputFilePath = ReserveOutputPath(outputFolder, $"{baseName}_converted", ext);
 
             var (success, error) = await ExecuteConversionAsync(item, outputFilePath, totalSeconds, useNvenc, ct);
 
@@ -120,6 +115,25 @@ public class FFmpegService
         }
     }
 
+    private static string ReserveOutputPath(string outputFolder, string baseName, string extension)
+    {
+        for (var suffix = 0; ; suffix++)
+        {
+            var name = suffix == 0 ? baseName : $"{baseName} ({suffix})";
+            var path = Path.Combine(outputFolder, $"{name}.{extension}");
+            try
+            {
+                // Reserve atomically so concurrent conversions cannot select the same name.
+                using var reservation = new FileStream(path, FileMode.CreateNew, FileAccess.Write);
+                return path;
+            }
+            catch (IOException) when (File.Exists(path) || Directory.Exists(path))
+            {
+                // Keep existing results and try the next name.
+            }
+        }
+    }
+
     private async Task<(bool Success, string? Error)> ExecuteConversionAsync(ConversionItem item, string outputFilePath, double totalSeconds, bool useNvenc, CancellationToken ct)
     {
         var ext = item.TargetFormat.ToLowerInvariant();
@@ -129,7 +143,7 @@ public class FFmpegService
             "-i", item.SourceFilePath
         };
 
-        if (item.CompressVideo && item.TargetSizeMb > 0)
+        if (item.CompressVideo && item.TargetSizeMb > 0 && ext is "mp4" or "mkv")
         {
             // Calculate target bitrate
             var targetBits = item.TargetSizeMb * 8L * 1024L * 1024L;

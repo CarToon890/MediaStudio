@@ -21,7 +21,20 @@ public class ConverterViewModel : ObservableObject
     private CancellationTokenSource? _convertCts;
 
     private string _selectedTargetFormat = "MP4";
-    public string SelectedTargetFormat { get => _selectedTargetFormat; set => SetProperty(ref _selectedTargetFormat, value); }
+    public string SelectedTargetFormat
+    {
+        get => _selectedTargetFormat;
+        set
+        {
+            if (SetProperty(ref _selectedTargetFormat, value))
+            {
+                OnPropertyChanged(nameof(CanCompressVideo));
+                if (!CanCompressVideo) IsCompressEnabled = false;
+            }
+        }
+    }
+
+    public bool CanCompressVideo => SelectedTargetFormat is "MP4" or "MKV";
 
     private bool _isCompressEnabled;
     public bool IsCompressEnabled { get => _isCompressEnabled; set => SetProperty(ref _isCompressEnabled, value); }
@@ -133,36 +146,72 @@ public class ConverterViewModel : ObservableObject
 
         IsConverting = true;
         StatusText = "กำลังเริ่มกระบวนการแปลงไฟล์...";
-        _convertCts = new CancellationTokenSource();
+        using var batchCts = new CancellationTokenSource();
+        _convertCts = batchCts;
+        var pendingItems = ConversionList.Where(i => i.Status != TaskState.Completed).ToList();
+        var targetFormat = SelectedTargetFormat;
+        var compressVideo = IsCompressEnabled && CanCompressVideo;
+        var targetSizeMb = TargetSizeMb;
 
-        if (!_dependencyService.IsReady)
+        try
         {
-            StatusText = "กำลังเตรียมเอนจิน FFmpeg...";
-            await _dependencyService.EnsureDependenciesAsync();
+            if (!_dependencyService.IsReady)
+            {
+                StatusText = "กำลังเตรียมเอนจิน FFmpeg...";
+                if (!await _dependencyService.EnsureDependenciesAsync(ct: batchCts.Token))
+                {
+                    batchCts.Token.ThrowIfCancellationRequested();
+                    StatusText = "ไม่สามารถเตรียมเอนจินได้ กรุณาลองใหม่";
+                    return;
+                }
+            }
+
+            batchCts.Token.ThrowIfCancellationRequested();
+            var outputFolder = _settingsService.Settings.DownloadDirectory;
+            Directory.CreateDirectory(outputFolder);
+            var useNvenc = _settingsService.Settings.EnableHardwareAcceleration;
+
+            foreach (var item in pendingItems)
+            {
+                batchCts.Token.ThrowIfCancellationRequested();
+                // Removed items must not run; newly added items wait for the next batch.
+                if (!ConversionList.Contains(item)) continue;
+
+                item.TargetFormat = targetFormat;
+                item.CompressVideo = compressVideo;
+                item.TargetSizeMb = targetSizeMb;
+
+                using var itemCts = CancellationTokenSource.CreateLinkedTokenSource(batchCts.Token);
+                item.Cts = itemCts;
+                try
+                {
+                    await _ffmpegService.ConvertAsync(item, outputFolder, useNvenc, itemCts.Token);
+                }
+                finally
+                {
+                    item.Cts = null;
+                }
+            }
+
+            batchCts.Token.ThrowIfCancellationRequested();
+            StatusText = ConversionList.Any(i => i.Status == TaskState.Queued)
+                ? "แปลงไฟล์ชุดนี้เสร็จแล้ว มีไฟล์ใหม่รอเริ่มแปลง"
+                : "ดำเนินการแปลงไฟล์ในคิวเรียบร้อยแล้ว";
         }
-
-        var outputFolder = _settingsService.Settings.DownloadDirectory;
-        Directory.CreateDirectory(outputFolder);
-        var useNvenc = _settingsService.Settings.EnableHardwareAcceleration;
-
-        foreach (var item in ConversionList.Where(i => i.Status != TaskState.Completed))
+        catch (OperationCanceledException)
         {
-            if (_convertCts.IsCancellationRequested) break;
-
-            item.TargetFormat = SelectedTargetFormat;
-            item.CompressVideo = IsCompressEnabled;
-            item.TargetSizeMb = TargetSizeMb;
-
-            var itemCts = CancellationTokenSource.CreateLinkedTokenSource(_convertCts.Token);
-            item.Cts = itemCts;
-
-            OnPropertyChanged(nameof(ActiveConversionsCount));
-            await _ffmpegService.ConvertAsync(item, outputFolder, useNvenc, itemCts.Token);
+            StatusText = "ยกเลิกการแปลงไฟล์ทั้งหมดแล้ว";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"เกิดข้อผิดพลาด: {ex.Message}";
+        }
+        finally
+        {
+            _convertCts = null;
+            IsConverting = false;
             OnPropertyChanged(nameof(ActiveConversionsCount));
         }
-
-        IsConverting = false;
-        StatusText = "ดำเนินการแปลงไฟล์ในคิวเรียบร้อยแล้ว";
     }
 
     private void PlayItem(ConversionItem? item)
@@ -205,7 +254,6 @@ public class ConverterViewModel : ObservableObject
             item.Status = TaskState.Cancelled;
             item.StatusMessage = "ยกเลิกโดยผู้ใช้";
         }
-        IsConverting = false;
         StatusText = "ยกเลิกการแปลงไฟล์ทั้งหมดแล้ว";
         OnPropertyChanged(nameof(ActiveConversionsCount));
     }
