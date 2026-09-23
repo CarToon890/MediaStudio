@@ -70,8 +70,8 @@
                         </Grid.ColumnDefinitions>
 
                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                            <ui:TextBlock Text="เปิดใช้งาน GPU Hardware Acceleration (NVIDIA NVENC)" FontWeight="SemiBold" />
-                            <ui:TextBlock Text="ใช้ชิปการ์ดจอ NVIDIA RTX ช่วยเร่งความเร็วในการแปลงและบีบอัดวิดีโอให้เร็วขึ้นสูงสุด 5 เท่า" 
+                            <ui:TextBlock Text="ใช้การ์ดจอช่วยประมวลผล (NVIDIA NVENC)" FontWeight="SemiBold" />
+                            <ui:TextBlock Text="ใช้การ์ดจอ NVIDIA ที่รองรับเพื่อเร่งการแปลงวิดีโอ หากใช้งานไม่ได้ระบบจะเปลี่ยนไปใช้ CPU"
                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />
                         </StackPanel>
 
@@ -94,7 +94,7 @@
                             <ui:TextBlock Text="{Binding EngineStatus}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />
                         </StackPanel>
 
-                        <ui:Button Grid.Column="1" Content="อัปเดต / โหลดเอนจินใหม่" Icon="{ui:SymbolIcon Symbol=ArrowSync24}" 
+                        <ui:Button Grid.Column="1" Content="{Binding EngineActionLabel}" Icon="{ui:SymbolIcon Symbol=ArrowSync24}"
                                    Command="{Binding UpdateEnginesCommand}" IsEnabled="{Binding IsUpdatingEngine, Converter={StaticResource InverseBooleanConverter}}" 
                                    VerticalAlignment="Center" />
                     </Grid>

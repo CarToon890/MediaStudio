@@ -1,18 +1,63 @@
-<UserControl x:Class="MediaStudio.Views.AudioTrimmerView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
- <Grid Margin="24"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-  <StackPanel Margin="0,0,0,18"><ui:TextBlock Text="ตัดเสียง" FontTypography="Title"/><ui:TextBlock Text="ดูคลื่นเสียงและเลือกช่วงที่ต้องการจากไฟล์เสียงหรือวิดีโอ" Margin="0,4,0,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/></StackPanel>
-  <Border Grid.Row="1" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,0,0,16"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><ui:TextBlock Text="{Binding FileName}" FontTypography="Subtitle"/><ui:TextBlock Text="{Binding StatusText}" Margin="0,4,0,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/></StackPanel><ui:Button Grid.Column="1" Content="เลือกไฟล์เสียงหรือวิดีโอ..." Command="{Binding SelectFileCommand}" Appearance="Primary" IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBooleanConverter}}"/></Grid></Border>
-  <Border Grid.Row="2" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="210"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-   <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><ui:TextBlock Text="คลื่นเสียงและช่วงที่เลือก" FontWeight="SemiBold"/><StackPanel Grid.Column="1" Orientation="Horizontal"><ui:TextBlock Text="ซูม" VerticalAlignment="Center" Margin="0,0,8,0"/><Slider x:Name="ZoomSlider" Minimum="1" Maximum="5" Value="1" Width="120" ValueChanged="ZoomSlider_ValueChanged"/></StackPanel></Grid>
-   <ScrollViewer Grid.Row="1" x:Name="WaveformScroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Margin="0,10"><Grid x:Name="WaveformHost" MinWidth="600" Background="#151515" ClipToBounds="True"><Canvas x:Name="WaveformCanvas" Height="190"/><Slider Minimum="0" Maximum="{Binding TotalSeconds}" Value="{Binding StartSeconds}" VerticalAlignment="Top" Margin="0,4,0,0"/><Slider Minimum="0" Maximum="{Binding TotalSeconds}" Value="{Binding EndSeconds}" VerticalAlignment="Bottom" Margin="0,0,0,4"/></Grid></ScrollViewer>
-   <Grid Grid.Row="2" Margin="0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-    <StackPanel Grid.Column="0" Margin="0,0,8,0"><ui:TextBlock Text="เวลาเริ่ม (วินาที)"/><TextBox Text="{Binding StartSeconds, UpdateSourceTrigger=PropertyChanged, StringFormat=F3}"/></StackPanel>
-    <StackPanel Grid.Column="1" Margin="8,0"><ui:TextBlock Text="เวลาสิ้นสุด (วินาที)"/><TextBox Text="{Binding EndSeconds, UpdateSourceTrigger=PropertyChanged, StringFormat=F3}"/></StackPanel>
-    <StackPanel Grid.Column="2" Margin="8,0"><ui:TextBlock Text="ความยาวช่วง"/><ui:TextBlock Text="{Binding SelectionDurationFormatted}" FontWeight="SemiBold" Margin="0,8,0,0"/></StackPanel>
-    <StackPanel Grid.Column="3" Margin="8,0,0,0"><ui:TextBlock Text="รูปแบบผลลัพธ์"/><ComboBox ItemsSource="{Binding OutputFormats}" SelectedItem="{Binding SelectedOutputFormat}"/></StackPanel>
-   </Grid>
-   <Grid Grid.Row="3" Margin="0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><ui:Button Content="เล่น / หยุด" Command="{Binding TogglePlayCommand}" IsEnabled="{Binding HasLoadedFile}" Margin="0,0,6,0"/><ui:Button Grid.Column="1" Content="ตั้งเป็นจุดเริ่ม" Command="{Binding SetStartToCurrentCommand}" Margin="0,0,6,0"/><ui:Button Grid.Column="2" Content="ตั้งเป็นจุดสิ้นสุด" Command="{Binding SetEndToCurrentCommand}"/><ui:TextBlock Grid.Column="3" Text="{Binding CurrentTimeFormatted, StringFormat='ตำแหน่งปัจจุบัน: {0}'}" VerticalAlignment="Center" HorizontalAlignment="Center"/><ui:Button Grid.Column="4" Content="เริ่มตัดเสียง" Command="{Binding StartTrimCommand}" Appearance="Success" IsEnabled="{Binding HasLoadedFile}"/></Grid>
-   <Border Grid.Row="4" Visibility="{Binding HasOutput, Converter={StaticResource BooleanToVisibilityConverter}}" Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="6" Padding="10" Margin="0,8,0,0"><StackPanel Orientation="Horizontal" HorizontalAlignment="Right"><ui:Button Content="เปิดผลลัพธ์" Command="{Binding OpenOutputCommand}" Margin="0,0,6,0"/><ui:Button Content="เปิดโฟลเดอร์" Command="{Binding OpenOutputFolderCommand}" Margin="0,0,6,0"/><ui:Button Content="ส่งไปแปลงไฟล์" Command="{Binding SendToConverterCommand}" Appearance="Primary"/></StackPanel></Border>
-  </Grid></Border>
- </Grid>
+<UserControl x:Class="MediaStudio.Views.AudioTrimmerView"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+ <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+  <Grid Margin="24" MinWidth="620">
+   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+   <StackPanel Margin="0,0,0,18">
+    <ui:TextBlock Text="ตัดและปรับระดับเสียง" FontTypography="Title"/>
+    <ui:TextBlock Text="เลือกช่วงจากคลื่นเสียง ปรับความดัง และบันทึกเป็น MP3, WAV หรือ FLAC" Margin="0,4,0,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+   </StackPanel>
+   <Border Grid.Row="1" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,0,0,16">
+    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+     <StackPanel><ui:TextBlock Text="{Binding FileName}" FontTypography="Subtitle" TextTrimming="CharacterEllipsis"/><ui:TextBlock Text="{Binding StatusText}" Margin="0,4,12,0" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/></StackPanel>
+     <ui:Button Grid.Column="1" Content="เลือกไฟล์เสียงหรือวิดีโอ..." Icon="{ui:SymbolIcon Symbol=FolderOpen24}" Command="{Binding SelectFileCommand}" Appearance="Primary" IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBooleanConverter}}"/>
+    </Grid>
+   </Border>
+   <Border Grid.Row="2" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
+    <StackPanel>
+     <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <StackPanel><ui:TextBlock Text="คลื่นเสียงและช่วงที่เลือก" FontWeight="SemiBold"/><ui:TextBlock Text="คลิกเพื่อเลื่อนตำแหน่ง หรือลากเส้นเริ่มต้นและสิ้นสุด" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,3,0,0"/></StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal"><ui:TextBlock Text="ซูม" VerticalAlignment="Center" Margin="0,0,8,0"/><Slider x:Name="ZoomSlider" Minimum="1" Maximum="8" Value="1" Width="140" ValueChanged="ZoomSlider_ValueChanged"/></StackPanel>
+     </Grid>
+     <ScrollViewer x:Name="WaveformScroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Margin="0,12,0,8">
+      <Grid x:Name="WaveformHost" MinWidth="600" Height="230" Background="#151515" ClipToBounds="True"
+            MouseLeftButtonDown="WaveformHost_MouseLeftButtonDown" MouseMove="WaveformHost_MouseMove" MouseLeftButtonUp="WaveformHost_MouseLeftButtonUp">
+       <Canvas x:Name="WaveformCanvas" Height="230"/>
+       <Canvas x:Name="WaveformOverlay" Height="230" IsHitTestVisible="False"/>
+       <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" Visibility="{Binding HasLoadedFile, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+        <ui:SymbolIcon Symbol="MusicNote224" FontSize="34" Foreground="{DynamicResource TextFillColorTertiaryBrush}" HorizontalAlignment="Center"/>
+        <ui:TextBlock Text="เลือกไฟล์เพื่อแสดงคลื่นเสียง" Margin="0,8,0,0" Foreground="{DynamicResource TextFillColorTertiaryBrush}"/>
+       </StackPanel>
+      </Grid>
+     </ScrollViewer>
+     <Grid Margin="0,6,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <StackPanel Grid.Column="0" Margin="0,0,8,0"><ui:TextBlock Text="เวลาเริ่ม (วินาที)"/><TextBox Text="{Binding StartSeconds, UpdateSourceTrigger=PropertyChanged, StringFormat=F3}" IsEnabled="{Binding HasLoadedFile}"/></StackPanel>
+      <StackPanel Grid.Column="1" Margin="8,0"><ui:TextBlock Text="เวลาสิ้นสุด (วินาที)"/><TextBox Text="{Binding EndSeconds, UpdateSourceTrigger=PropertyChanged, StringFormat=F3}" IsEnabled="{Binding HasLoadedFile}"/></StackPanel>
+      <StackPanel Grid.Column="2" Margin="8,0"><ui:TextBlock Text="ความยาวช่วง"/><ui:TextBlock Text="{Binding SelectionDurationFormatted}" FontWeight="SemiBold" Margin="0,9,0,0"/></StackPanel>
+      <StackPanel Grid.Column="3" Margin="8,0,0,0"><ui:TextBlock Text="รูปแบบผลลัพธ์"/><ComboBox ItemsSource="{Binding OutputFormats}" SelectedItem="{Binding SelectedOutputFormat}" IsEnabled="{Binding HasLoadedFile}"/></StackPanel>
+     </Grid>
+     <Border Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="6" Padding="12" Margin="0,0,0,12">
+      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+       <StackPanel Margin="0,0,16,0"><ui:TextBlock Text="ระดับเสียง" FontWeight="SemiBold"/><ui:TextBlock Text="ฟังผลได้ทันทีและใช้ค่าเดียวกันตอนบันทึก" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/></StackPanel>
+       <Slider Grid.Column="1" Minimum="0" Maximum="200" TickFrequency="25" Value="{Binding VolumePercent}" IsEnabled="{Binding HasLoadedFile}" VerticalAlignment="Center"/>
+       <ui:TextBlock Grid.Column="2" Text="{Binding VolumeDisplay}" FontWeight="SemiBold" MinWidth="118" TextAlignment="Right" VerticalAlignment="Center" Margin="14,0"/>
+       <ui:Button Grid.Column="3" Content="กลับเป็น 100%" Command="{Binding ResetVolumeCommand}" IsEnabled="{Binding HasLoadedFile}"/>
+      </Grid>
+     </Border>
+     <WrapPanel>
+      <ui:Button Content="{Binding PlayButtonText}" Command="{Binding TogglePlayCommand}" IsEnabled="{Binding HasLoadedFile}" Margin="0,0,6,6"/>
+      <ui:Button Content="ตั้งตำแหน่งนี้เป็นจุดเริ่ม" Command="{Binding SetStartToCurrentCommand}" IsEnabled="{Binding HasLoadedFile}" Margin="0,0,6,6"/>
+      <ui:Button Content="ตั้งตำแหน่งนี้เป็นจุดสิ้นสุด" Command="{Binding SetEndToCurrentCommand}" IsEnabled="{Binding HasLoadedFile}" Margin="0,0,6,6"/>
+      <ui:TextBlock Text="{Binding CurrentTimeFormatted, StringFormat='ตำแหน่งปัจจุบัน: {0}'}" VerticalAlignment="Center" Margin="12,0,18,6"/>
+      <ui:Button Content="เริ่มตัดและบันทึกเสียง" Command="{Binding StartTrimCommand}" Appearance="Success" IsEnabled="{Binding CanTrim}" Margin="0,0,0,6"/>
+     </WrapPanel>
+     <Border Visibility="{Binding HasOutput, Converter={StaticResource BooleanToVisibilityConverter}}" Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="6" Padding="10" Margin="0,8,0,0">
+      <WrapPanel HorizontalAlignment="Right"><ui:Button Content="เปิดผลลัพธ์" Command="{Binding OpenOutputCommand}" Margin="0,0,6,0"/><ui:Button Content="เปิดโฟลเดอร์" Command="{Binding OpenOutputFolderCommand}" Margin="0,0,6,0"/><ui:Button Content="ส่งไปแปลงไฟล์" Command="{Binding SendToConverterCommand}" Appearance="Primary"/></WrapPanel>
+     </Border>
+    </StackPanel>
+   </Border>
+  </Grid>
+ </ScrollViewer>
 </UserControl>

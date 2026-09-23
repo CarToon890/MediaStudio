@@ -46,9 +46,9 @@
         <!-- Main Trimmer Area -->
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="440" />
-                <ColumnDefinition Width="20" />
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="2*" MinWidth="300" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="3*" MinWidth="330" />
             </Grid.ColumnDefinitions>
 
             <!-- Left Column: Video Preview Player & Player Controls -->
@@ -58,11 +58,11 @@
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="240" />
+                        <RowDefinition Height="220" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <ui:TextBlock Grid.Row="0" Text="ตัวอย่างวิดีโอ (Video Preview)" FontWeight="SemiBold" Margin="0,0,0,10" />
+                    <ui:TextBlock Grid.Row="0" Text="ตัวอย่างวิดีโอ" FontWeight="SemiBold" Margin="0,0,0,10" />
 
                     <!-- Player Screen -->
                     <Border Grid.Row="1" Background="#0A0A0A" CornerRadius="6" ClipToBounds="True">
@@ -119,12 +119,12 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
 
-                            <ui:Button Grid.Column="0" Content="ตั้งเป็นจุดเริ่มต้น (Start)"
+                            <ui:Button Grid.Column="0" Content="ตั้งเป็นจุดเริ่มต้น"
                                        Command="{Binding SetStartToCurrentCommand}" 
                                        IsEnabled="{Binding HasLoadedFile}" 
                                        HorizontalAlignment="Stretch" Margin="0,0,4,0" />
 
-                            <ui:Button Grid.Column="1" Content="ตั้งเป็นจุดสิ้นสุด (End)"
+                            <ui:Button Grid.Column="1" Content="ตั้งเป็นจุดสิ้นสุด"
                                        Command="{Binding SetEndToCurrentCommand}" 
                                        IsEnabled="{Binding HasLoadedFile}" 
                                        HorizontalAlignment="Stretch" Margin="4,0,0,0" />
@@ -157,14 +157,14 @@
 
                         <Border Grid.Column="0" Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="6" Padding="12" Margin="0,0,4,0">
                             <StackPanel HorizontalAlignment="Center">
-                                <ui:TextBlock Text="เวลาเริ่ม (Start)" Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="11" />
+                                <ui:TextBlock Text="เวลาเริ่ม" Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="11" />
                                 <ui:TextBlock Text="{Binding StartTimeFormatted}" FontWeight="Bold" FontSize="15" Margin="0,2,0,0" />
                             </StackPanel>
                         </Border>
 
                         <Border Grid.Column="1" Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="6" Padding="12" Margin="2,0,2,0">
                             <StackPanel HorizontalAlignment="Center">
-                                <ui:TextBlock Text="เวลาจบ (End)" Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="11" />
+                                <ui:TextBlock Text="เวลาสิ้นสุด" Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="11" />
                                 <ui:TextBlock Text="{Binding EndTimeFormatted}" FontWeight="Bold" FontSize="15" Margin="0,2,0,0" />
                             </StackPanel>
                         </Border>
@@ -180,7 +180,7 @@
                     <!-- Slider 1: Start Time -->
                     <StackPanel Grid.Row="1" Margin="0,0,0,14">
                         <Grid Margin="0,0,0,4">
-                            <ui:TextBlock Text="จุดเริ่มต้น (Start Time):" FontWeight="SemiBold" HorizontalAlignment="Left" />
+                        <ui:TextBlock Text="จุดเริ่มต้น:" FontWeight="SemiBold" HorizontalAlignment="Left" />
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                 <ui:Button Content="ข้ามไปจุดนี้" Icon="{ui:SymbolIcon Symbol=ChevronRight16}" 
                                            Command="{Binding SeekToStartCommand}" Padding="6,2" Margin="0,0,6,0" FontSize="11" />
@@ -195,7 +195,7 @@
                     <!-- Slider 2: End Time -->
                     <StackPanel Grid.Row="2" Margin="0,0,0,16">
                         <Grid Margin="0,0,0,4">
-                            <ui:TextBlock Text="จุดสิ้นสุด (End Time):" FontWeight="SemiBold" HorizontalAlignment="Left" />
+                        <ui:TextBlock Text="จุดสิ้นสุด:" FontWeight="SemiBold" HorizontalAlignment="Left" />
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                 <ui:Button Content="ข้ามไปจุดนี้" Icon="{ui:SymbolIcon Symbol=ChevronRight16}" 
                                            Command="{Binding SeekToEndCommand}" Padding="6,2" Margin="0,0,6,0" FontSize="11" />
@@ -208,7 +208,7 @@
                     </StackPanel>
 
                     <!-- Options -->
-                    <ui:TextBlock Grid.Row="3" Text="โหมด Lossless Cut: รักษาคุณภาพเดิมโดยไม่เข้ารหัสวิดีโอใหม่"
+                    <ui:TextBlock Grid.Row="3" Text="ตัดแบบรักษาคุณภาพเดิมโดยไม่เข้ารหัสวิดีโอใหม่"
                                   Foreground="{DynamicResource SystemAccentColorLight2Brush}" FontWeight="SemiBold" Margin="0,0,0,16" />
 
                     <!-- Status Text -->
@@ -216,28 +216,18 @@
                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12" />
 
                     <!-- Action Buttons -->
-                    <Grid Grid.Row="5">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-
-                        <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <WrapPanel Grid.Row="5">
                             <ui:Button Content="เปิดผลลัพธ์" Appearance="Primary" Icon="{ui:SymbolIcon Symbol=Play24}" Command="{Binding PlayLastTrimmedCommand}" Visibility="{Binding HasLastTrimmedPath, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,0,6,0"/>
                             <ui:Button Content="ส่งไปแปลง" Command="{Binding SendToConverterCommand}" Visibility="{Binding HasLastTrimmedPath, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,0,6,0"/>
                             <ui:Button Content="ส่งไปตัดเสียง" Command="{Binding SendToAudioTrimmerCommand}" Visibility="{Binding HasLastTrimmedPath, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,0,6,0"/>
-                        </StackPanel>
-
-                        <ui:Button Grid.Column="1" Content="เปิดโฟลเดอร์" Icon="{ui:SymbolIcon Symbol=FolderOpen24}" 
+                        <ui:Button Content="เปิดโฟลเดอร์" Icon="{ui:SymbolIcon Symbol=FolderOpen24}"
                                    Command="{Binding OpenLastTrimmedFolderCommand}" Margin="0,0,8,0" 
                                    Visibility="{Binding HasLastTrimmedPath, Converter={StaticResource BooleanToVisibilityConverter}}" />
-
-                        <ui:Button Grid.Column="2" Content="เริ่มตัดคลิปทันที" Appearance="Success" Icon="{ui:SymbolIcon Symbol=Cut24}" 
+                        <ui:Button Content="เริ่มตัดคลิปทันที" Appearance="Success" Icon="{ui:SymbolIcon Symbol=Cut24}"
                                    Command="{Binding StartTrimCommand}" 
                                    IsEnabled="{Binding HasLoadedFile}" 
                                    Padding="20,10" />
-                    </Grid>
+                    </WrapPanel>
                 </Grid>
             </Border>
         </Grid>

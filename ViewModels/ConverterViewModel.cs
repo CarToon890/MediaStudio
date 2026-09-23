@@ -62,6 +62,7 @@ public class ConverterViewModel : ObservableObject
     public ObservableCollection<ConversionItem> ConversionList { get; } = new();
 
     public int ActiveConversionsCount => ConversionList.Count(i => i.IsRunning);
+    public bool HasConversionItems => ConversionList.Count > 0;
 
     public IRelayCommand SelectFilesCommand { get; }
     public IAsyncRelayCommand StartConversionCommand { get; }
@@ -92,7 +93,11 @@ public class ConverterViewModel : ObservableObject
         SendToVideoTrimmerCommand = new RelayCommand<ConversionItem>(item => Send(item, ToolDestination.VideoTrimmer));
         SendToAudioTrimmerCommand = new RelayCommand<ConversionItem>(item => Send(item, ToolDestination.AudioTrimmer));
 
-        ConversionList.CollectionChanged += (s, e) => OnPropertyChanged(nameof(ActiveConversionsCount));
+        ConversionList.CollectionChanged += (s, e) =>
+        {
+            OnPropertyChanged(nameof(ActiveConversionsCount));
+            OnPropertyChanged(nameof(HasConversionItems));
+        };
     }
 
     private void SelectFiles()

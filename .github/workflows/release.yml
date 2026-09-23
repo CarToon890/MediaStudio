@@ -50,7 +50,9 @@ jobs:
 
       - name: Run regression tests
         shell: pwsh
-        run: dotnet run --project Tests/MediaStudio.RegressionTests.csproj -c Release -- "${{ steps.ffmpeg.outputs.path }}"
+        run: |
+          dotnet run --project Tests/MediaStudio.RegressionTests.csproj -c Release -- "${{ steps.ffmpeg.outputs.path }}"
+          ./Tests/IconSmoke.ps1
 
       - name: Publish self-contained app
         shell: pwsh
@@ -58,7 +60,9 @@ jobs:
 
       - name: Verify application startup
         shell: pwsh
-        run: ./Tests/StartupSmoke.ps1 -AppPath artifacts/publish/MediaStudio.exe -FFmpegPath "${{ steps.ffmpeg.outputs.path }}"
+        run: |
+          ./Tests/StartupSmoke.ps1 -AppPath artifacts/publish/MediaStudio.exe -FFmpegPath "${{ steps.ffmpeg.outputs.path }}"
+          ./Tests/EngineConsentSmoke.ps1 -AppPath artifacts/publish/MediaStudio.exe
 
       - name: Package portable app
         shell: pwsh

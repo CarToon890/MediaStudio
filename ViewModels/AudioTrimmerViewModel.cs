@@ -18,8 +18,9 @@ public sealed class AudioTrimmerViewModel : ObservableObject
     private CancellationTokenSource? _loadCts;
 
     private string _sourceFilePath = string.Empty;
-    public string SourceFilePath { get => _sourceFilePath; set { if (SetProperty(ref _sourceFilePath, value)) OnPropertyChanged(nameof(HasLoadedFile)); } }
+    public string SourceFilePath { get => _sourceFilePath; set { if (SetProperty(ref _sourceFilePath, value)) { OnPropertyChanged(nameof(HasLoadedFile)); OnPropertyChanged(nameof(CanTrim)); } } }
     public bool HasLoadedFile => File.Exists(SourceFilePath);
+    public bool CanTrim => HasLoadedFile && !IsBusy && EndSeconds > StartSeconds;
     private string _fileName = "ยังไม่ได้เลือกไฟล์";
     public string FileName { get => _fileName; set => SetProperty(ref _fileName, value); }
     private string _previewFilePath = string.Empty;
@@ -36,10 +37,30 @@ public sealed class AudioTrimmerViewModel : ObservableObject
     public string EndTimeFormatted => TimeSpan.FromSeconds(EndSeconds).ToString(@"hh\:mm\:ss\.fff");
     public string SelectionDurationFormatted => TimeSpan.FromSeconds(Math.Max(0, EndSeconds - StartSeconds)).ToString(@"hh\:mm\:ss\.fff");
     public string CurrentTimeFormatted => TimeSpan.FromSeconds(CurrentPositionSeconds).ToString(@"hh\:mm\:ss\.fff");
+    private double _volumePercent = 100;
+    public double VolumePercent
+    {
+        get => _volumePercent;
+        set
+        {
+            if (!SetProperty(ref _volumePercent, Math.Clamp(value, 0, 200))) return;
+            OnPropertyChanged(nameof(VolumeDisplay));
+        }
+    }
+    public string VolumeDisplay
+    {
+        get
+        {
+            if (VolumePercent <= 0) return "0% (ปิดเสียง)";
+            var db = 20 * Math.Log10(VolumePercent / 100d);
+            return $"{VolumePercent:F0}% ({db:+0.0;-0.0;0.0} dB)";
+        }
+    }
     private bool _isPlaying;
-    public bool IsPlaying { get => _isPlaying; set => SetProperty(ref _isPlaying, value); }
+    public bool IsPlaying { get => _isPlaying; set { if (SetProperty(ref _isPlaying, value)) OnPropertyChanged(nameof(PlayButtonText)); } }
+    public string PlayButtonText => IsPlaying ? "หยุดชั่วคราว" : "เล่นช่วงที่เลือก";
     private bool _isBusy;
-    public bool IsBusy { get => _isBusy; set => SetProperty(ref _isBusy, value); }
+    public bool IsBusy { get => _isBusy; set { if (SetProperty(ref _isBusy, value)) OnPropertyChanged(nameof(CanTrim)); } }
     private string _statusText = "เลือกไฟล์เสียงหรือวิดีโอเพื่อเริ่มตัดเสียง";
     public string StatusText { get => _statusText; set => SetProperty(ref _statusText, value); }
     private string _selectedOutputFormat = "MP3";
@@ -62,6 +83,7 @@ public sealed class AudioTrimmerViewModel : ObservableObject
     public IRelayCommand OpenOutputCommand { get; }
     public IRelayCommand OpenOutputFolderCommand { get; }
     public IRelayCommand SendToConverterCommand { get; }
+    public IRelayCommand ResetVolumeCommand { get; }
 
     public AudioTrimmerViewModel(FFmpegService ffmpeg, SettingsService settings, DependencyService dependencies, MediaWorkspace workspace)
     {
@@ -80,6 +102,7 @@ public sealed class AudioTrimmerViewModel : ObservableObject
         OpenOutputCommand = new RelayCommand(OpenOutput);
         OpenOutputFolderCommand = new RelayCommand(OpenOutputFolder);
         SendToConverterCommand = new RelayCommand(() => Send(ToolDestination.Converter));
+        ResetVolumeCommand = new RelayCommand(() => VolumePercent = 100);
     }
 
     private async Task SelectFileAsync()
@@ -124,6 +147,7 @@ public sealed class AudioTrimmerViewModel : ObservableObject
             StartSeconds = 0;
             EndSeconds = TotalSeconds;
             CurrentPositionSeconds = 0;
+            VolumePercent = 100;
             var ext = Path.GetExtension(path).TrimStart('.').ToUpperInvariant();
             SelectedOutputFormat = OutputFormats.Contains(ext) ? ext : "MP3";
             _workspace.Register(path, "ไฟล์นำเข้า", TotalSeconds);
@@ -146,7 +170,8 @@ public sealed class AudioTrimmerViewModel : ObservableObject
         StatusText = "กำลังตัดและบันทึกเสียง...";
         var output = _settings.Settings.DownloadDirectory;
         Directory.CreateDirectory(output);
-        var result = await _ffmpeg.TrimAudioAsync(SourceFilePath, TimeSpan.FromSeconds(StartSeconds), TimeSpan.FromSeconds(EndSeconds), output, SelectedOutputFormat);
+        var result = await _ffmpeg.TrimAudioAsync(SourceFilePath, TimeSpan.FromSeconds(StartSeconds), TimeSpan.FromSeconds(EndSeconds),
+            output, SelectedOutputFormat, VolumePercent);
         IsBusy = false;
         if (!result.Success)
         {
@@ -163,6 +188,7 @@ public sealed class AudioTrimmerViewModel : ObservableObject
         OnPropertyChanged(nameof(StartTimeFormatted));
         OnPropertyChanged(nameof(EndTimeFormatted));
         OnPropertyChanged(nameof(SelectionDurationFormatted));
+        OnPropertyChanged(nameof(CanTrim));
     }
 
     private void OpenOutput()

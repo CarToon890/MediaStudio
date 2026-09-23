@@ -338,7 +338,8 @@ public class FFmpegService
         finally { if (File.Exists(tempPath)) File.Delete(tempPath); }
     }
 
-    public async Task<MediaOperationResult> TrimAudioAsync(string inputFilePath, TimeSpan start, TimeSpan end, string outputFolder, string outputFormat, CancellationToken ct = default)
+    public async Task<MediaOperationResult> TrimAudioAsync(string inputFilePath, TimeSpan start, TimeSpan end,
+        string outputFolder, string outputFormat, double volumePercent = 100, CancellationToken ct = default)
     {
         if (!File.Exists(_dependencyService.FFmpegPath) || !File.Exists(inputFilePath))
             return MediaOperationResult.Failed("ไม่พบไฟล์ต้นทางหรือเอนจิน FFmpeg");
@@ -347,6 +348,7 @@ public class FFmpegService
         Directory.CreateDirectory(outputFolder);
         var ext = outputFormat.ToLowerInvariant();
         if (ext is not ("mp3" or "wav" or "flac")) ext = "mp3";
+        volumePercent = Math.Clamp(volumePercent, 0, 200);
         var outputPath = ReserveOutputPath(outputFolder, $"{Path.GetFileNameWithoutExtension(inputFilePath)}_audio_trimmed", ext);
         try
         {
@@ -362,6 +364,12 @@ public class FFmpegService
                 "-t", (end - start).ToString(@"hh\:mm\:ss\.fff", CultureInfo.InvariantCulture),
                 "-i", inputFilePath, "-map", "0:a:0", "-vn"
             };
+            if (Math.Abs(volumePercent - 100) > .001)
+            {
+                var factor = (volumePercent / 100d).ToString("0.####", CultureInfo.InvariantCulture);
+                var filter = volumePercent > 100 ? $"volume={factor},alimiter=limit=0.95" : $"volume={factor}";
+                args.AddRange(new[] { "-af", filter });
+            }
             args.AddRange(codecArgs);
             args.Add(outputPath);
             var result = await Cli.Wrap(_dependencyService.FFmpegPath).WithArguments(args)

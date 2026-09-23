@@ -134,6 +134,21 @@ try
         Check(trim.Success && File.Exists(trim.OutputPath) && new FileInfo(trim.OutputPath).Length > 0, "Audio trim failed: " + format);
         workspace.Register(trim.OutputPath, "Audio Trimmer", .7);
     }
+    var quietTrim = await ffmpeg.TrimAudioAsync(source, TimeSpan.Zero, TimeSpan.FromSeconds(.8), output, "WAV", 50);
+    var boostedTrim = await ffmpeg.TrimAudioAsync(source, TimeSpan.Zero, TimeSpan.FromSeconds(.8), output, "WAV", 150);
+    Check(quietTrim.Success && boostedTrim.Success, "Volume-adjusted audio trim failed");
+    var quietWaveform = await ffmpeg.AnalyzeAudioAsync(quietTrim.OutputPath, 80);
+    var boostedWaveform = await ffmpeg.AnalyzeAudioAsync(boostedTrim.OutputPath, 80);
+    var quietPeak = quietWaveform.Peaks.DefaultIfEmpty().Max();
+    var boostedPeak = boostedWaveform.Peaks.DefaultIfEmpty().Max();
+    Check(quietWaveform.Success && boostedWaveform.Success && boostedPeak > quietPeak * 2.4,
+        $"Audio gain was not applied: quiet={quietPeak:F3}, boosted={boostedPeak:F3}");
+    File.Delete(quietWaveform.PreviewPath);
+    File.Delete(boostedWaveform.PreviewPath);
+    var audioVm = new AudioTrimmerViewModel(ffmpeg, settings, dependency, workspace) { VolumePercent = 150 };
+    Check(audioVm.VolumeDisplay.Contains("150%") && audioVm.VolumeDisplay.Contains("+3.5 dB"), "Volume percentage/dB label is incorrect");
+    audioVm.VolumePercent = 0;
+    Check(audioVm.VolumeDisplay.Contains("ปิดเสียง"), "Muted volume label is incorrect");
     var reloadedWorkspace = new MediaWorkspace(workspacePath);
     Check(reloadedWorkspace.Assets.Count == workspace.Assets.Count && reloadedWorkspace.Assets.Count(x => x.Kind == MediaKind.Audio) == 3,
         $"Workspace persistence failed: count={reloadedWorkspace.Assets.Count}, kinds={string.Join(',', reloadedWorkspace.Assets.Select(x => x.Kind))}");

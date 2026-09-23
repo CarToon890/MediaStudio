@@ -11,6 +11,7 @@ public class AppSettings
     public string PreferredVideoQuality { get; set; } = "1080p";
     public string PreferredAudioFormat { get; set; } = "MP3";
     public bool HasCompletedOnboarding { get; set; }
+    public bool HasSeenEnginePrompt { get; set; }
     public string LastVisitedTab { get; set; } = "Home";
 }
 
@@ -21,7 +22,10 @@ public class SettingsService
 
     public SettingsService()
     {
-        var appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MediaStudio");
+        var isolatedDirectory = Environment.GetEnvironmentVariable("MEDIASTUDIO_APPDATA_DIR");
+        var appDataDir = !string.IsNullOrWhiteSpace(isolatedDirectory)
+            ? isolatedDirectory
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MediaStudio");
         Directory.CreateDirectory(appDataDir);
         _settingsFilePath = Path.Combine(appDataDir, "settings.json");
 

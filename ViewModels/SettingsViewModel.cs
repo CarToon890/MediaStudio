@@ -15,6 +15,7 @@ public class SettingsViewModel : ObservableObject
     public string AppVersion => $"MediaStudio v{Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.1.0"}";
     private readonly SettingsService _settingsService;
     private readonly DependencyService _dependencyService;
+    private readonly IConfirmationService _confirmationService;
 
     private string _downloadPath = string.Empty;
     public string DownloadPath
@@ -50,6 +51,7 @@ public class SettingsViewModel : ObservableObject
         get => _engineStatus;
         set => SetProperty(ref _engineStatus, value);
     }
+    public string EngineActionLabel => _dependencyService.IsReady ? "ตรวจสอบและอัปเดต" : "ติดตั้งเอนจิน";
 
     private bool _isUpdatingEngine;
     public bool IsUpdatingEngine
@@ -62,10 +64,12 @@ public class SettingsViewModel : ObservableObject
     public IRelayCommand OpenDownloadFolderCommand { get; }
     public IAsyncRelayCommand UpdateEnginesCommand { get; }
 
-    public SettingsViewModel(SettingsService settingsService, DependencyService dependencyService)
+    public SettingsViewModel(SettingsService settingsService, DependencyService dependencyService,
+        IConfirmationService confirmationService)
     {
         _settingsService = settingsService;
         _dependencyService = dependencyService;
+        _confirmationService = confirmationService;
 
         _downloadPath = _settingsService.Settings.DownloadDirectory;
         _enableHardwareAcceleration = _settingsService.Settings.EnableHardwareAcceleration;
@@ -75,6 +79,7 @@ public class SettingsViewModel : ObservableObject
         UpdateEnginesCommand = new AsyncRelayCommand(UpdateEnginesAsync);
 
         UpdateEngineStatus();
+        _dependencyService.AvailabilityChanged += UpdateEngineStatus;
     }
 
     private void UpdateEngineStatus()
@@ -87,6 +92,7 @@ public class SettingsViewModel : ObservableObject
         {
             EngineStatus = "ยังไม่ได้ดาวน์โหลดเอนจินประมวลผล";
         }
+        OnPropertyChanged(nameof(EngineActionLabel));
     }
 
     private void BrowseDownloadFolder()
@@ -120,13 +126,19 @@ public class SettingsViewModel : ObservableObject
 
     private async Task UpdateEnginesAsync()
     {
+        var refresh = _dependencyService.IsReady;
+        if (!_confirmationService.ConfirmEngineDownload(refresh)) return;
         IsUpdatingEngine = true;
-        EngineStatus = "กำลังตรวจสอบและดาวน์โหลดเอนจินล่าสุด...";
+        EngineStatus = refresh ? "กำลังดาวน์โหลดและตรวจสอบเอนจินรุ่นล่าสุด..." : "กำลังติดตั้งเอนจิน...";
 
         var progress = new Progress<string>(msg => EngineStatus = msg);
-        await _dependencyService.EnsureDependenciesAsync(progress);
+        var succeeded = await _dependencyService.EnsureDependenciesAsync(progress,
+            mode: refresh ? EngineSetupMode.RefreshAll : EngineSetupMode.InstallMissing);
 
         IsUpdatingEngine = false;
-        UpdateEngineStatus();
+        if (succeeded) UpdateEngineStatus();
+        else EngineStatus = _dependencyService.IsReady
+            ? "อัปเดตไม่สำเร็จ แต่ยังใช้เอนจินเดิมได้"
+            : "ติดตั้งไม่สำเร็จ ตรวจสอบอินเทอร์เน็ตแล้วลองอีกครั้ง";
     }
 }

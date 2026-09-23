@@ -1,11 +1,18 @@
 using System;
 using System.IO;
 using System.IO.Compression;
+using System.Diagnostics;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace MediaStudio.Services;
+
+public enum EngineSetupMode
+{
+    InstallMissing,
+    RefreshAll
+}
 
 public class DependencyService
 {
@@ -18,6 +25,7 @@ public class DependencyService
     public bool IsReady => File.Exists(YtDlpPath) && File.Exists(FFmpegPath);
 
     public event Action<string, double>? DownloadProgressChanged;
+    public event Action? AvailabilityChanged;
 
     public DependencyService()
     {
@@ -44,11 +52,15 @@ public class DependencyService
         }
     }
 
-    public async Task<bool> EnsureDependenciesAsync(IProgress<string>? progress = null, CancellationToken ct = default)
+    public async Task<bool> EnsureDependenciesAsync(IProgress<string>? progress = null, CancellationToken ct = default,
+        EngineSetupMode mode = EngineSetupMode.InstallMissing)
     {
         await _semaphore.WaitAsync(ct);
         try
         {
+            if (mode == EngineSetupMode.RefreshAll)
+                return await RefreshAllAsync(progress, ct);
+
             // 1. Ensure yt-dlp
             if (!File.Exists(YtDlpPath))
             {
@@ -96,6 +108,7 @@ public class DependencyService
             }
 
             progress?.Report("เอนจินพร้อมใช้งานเรียบร้อยแล้ว");
+            AvailabilityChanged?.Invoke();
             return IsReady;
         }
         catch (Exception ex)
@@ -107,6 +120,100 @@ public class DependencyService
         {
             _semaphore.Release();
         }
+    }
+
+    private async Task<bool> RefreshAllAsync(IProgress<string>? progress, CancellationToken ct)
+    {
+        var stagingDirectory = Path.Combine(_binDirectory, ".engine-update-" + Guid.NewGuid().ToString("N"));
+        var stagedYtDlp = Path.Combine(stagingDirectory, "yt-dlp.exe");
+        var stagedZip = Path.Combine(stagingDirectory, "ffmpeg.zip");
+        var stagedFfmpeg = Path.Combine(stagingDirectory, "ffmpeg.exe");
+        var localYtDlp = Path.Combine(_binDirectory, "yt-dlp.exe");
+        var localFfmpeg = Path.Combine(_binDirectory, "ffmpeg.exe");
+        Directory.CreateDirectory(stagingDirectory);
+        try
+        {
+            progress?.Report("กำลังดาวน์โหลด yt-dlp รุ่นล่าสุด...");
+            await DownloadFileAsync("https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe", stagedYtDlp, "yt-dlp", ct);
+            progress?.Report("กำลังดาวน์โหลด FFmpeg รุ่นล่าสุด...");
+            await DownloadFileAsync("https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip", stagedZip, "FFmpeg", ct);
+            progress?.Report("กำลังตรวจสอบไฟล์เอนจิน...");
+            using (var archive = ZipFile.OpenRead(stagedZip))
+            {
+                var entry = archive.Entries.FirstOrDefault(x => x.Name.Equals("ffmpeg.exe", StringComparison.OrdinalIgnoreCase))
+                    ?? throw new InvalidDataException("ไม่พบ ffmpeg.exe ในไฟล์ที่ดาวน์โหลด");
+                entry.ExtractToFile(stagedFfmpeg);
+            }
+
+            if (!await ValidateExecutableAsync(stagedYtDlp, "--version", ct) ||
+                !await ValidateExecutableAsync(stagedFfmpeg, "-version", ct))
+                throw new InvalidDataException("ไฟล์เอนจินที่ดาวน์โหลดไม่สามารถเริ่มทำงานได้");
+
+            ReplaceEnginesAtomically(stagedYtDlp, stagedFfmpeg, localYtDlp, localFfmpeg);
+            YtDlpPath = localYtDlp;
+            FFmpegPath = localFfmpeg;
+            progress?.Report("อัปเดตเอนจินเรียบร้อยแล้ว");
+            AvailabilityChanged?.Invoke();
+            return true;
+        }
+        finally
+        {
+            try { if (Directory.Exists(stagingDirectory)) Directory.Delete(stagingDirectory, true); }
+            catch { }
+        }
+    }
+
+    private static async Task<bool> ValidateExecutableAsync(string path, string argument, CancellationToken ct)
+    {
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo(path, argument)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true
+            });
+            if (process is null) return false;
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
+            try { await process.WaitForExitAsync(linked.Token); }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                try { process.Kill(true); } catch { }
+                return false;
+            }
+            return process.ExitCode == 0;
+        }
+        catch { return false; }
+    }
+
+    private static void ReplaceEnginesAtomically(string stagedYtDlp, string stagedFfmpeg, string localYtDlp, string localFfmpeg)
+    {
+        var backupId = Guid.NewGuid().ToString("N");
+        var backupYtDlp = localYtDlp + ".backup." + backupId;
+        var backupFfmpeg = localFfmpeg + ".backup." + backupId;
+        try
+        {
+            if (File.Exists(localYtDlp)) File.Move(localYtDlp, backupYtDlp);
+            if (File.Exists(localFfmpeg)) File.Move(localFfmpeg, backupFfmpeg);
+            File.Move(stagedYtDlp, localYtDlp);
+            File.Move(stagedFfmpeg, localFfmpeg);
+            TryDelete(backupYtDlp);
+            TryDelete(backupFfmpeg);
+        }
+        catch
+        {
+            TryDelete(localYtDlp);
+            TryDelete(localFfmpeg);
+            if (File.Exists(backupYtDlp)) File.Move(backupYtDlp, localYtDlp);
+            if (File.Exists(backupFfmpeg)) File.Move(backupFfmpeg, localFfmpeg);
+            throw;
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); }
+        catch { }
     }
 
     private async Task DownloadFileAsync(string url, string destinationPath, string name, CancellationToken ct)

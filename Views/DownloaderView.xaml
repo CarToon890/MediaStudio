@@ -122,12 +122,18 @@
 
                 <ui:TextBlock Grid.Row="0" Text="คิวและประวัติการดาวน์โหลด" FontTypography="Subtitle" Margin="0,0,0,12" />
 
+                <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding HasDownloadItems, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                    <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="32" HorizontalAlignment="Center" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                    <ui:TextBlock Text="ยังไม่มีรายการดาวน์โหลด" Margin="0,8,0,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+
                 <ListBox Grid.Row="1" ItemsSource="{Binding DownloadQueue}" Background="Transparent" BorderThickness="0">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <Border Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="6" Padding="12" Margin="0,0,0,8">
                                 <Grid>
                                     <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="Auto" />
                                     </Grid.RowDefinitions>
@@ -143,7 +149,7 @@
                                     </StackPanel>
 
                                     <!-- Actions -->
-                                    <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
+                                    <WrapPanel Grid.Row="1" Grid.ColumnSpan="2" Margin="0,10,0,0">
                                         <ui:Button Icon="{ui:SymbolIcon Symbol=Play24}" ToolTip="เปิดเล่นไฟล์ทันที" 
                                                    Appearance="Primary"
                                                    Command="{Binding DataContext.PlayItemCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" 
@@ -169,10 +175,10 @@
                                         <ui:Button Icon="{ui:SymbolIcon Symbol=Dismiss24}" ToolTip="ลบรายการ" 
                                                    Command="{Binding DataContext.RemoveItemCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" 
                                                    CommandParameter="{Binding}" />
-                                    </StackPanel>
+                                    </WrapPanel>
 
                                     <!-- Progress Bar -->
-                                    <ProgressBar Grid.Row="1" Grid.ColumnSpan="2" Value="{Binding Progress}" Maximum="100" Height="6" Margin="0,8,0,0" />
+                                    <ProgressBar Grid.Row="2" Grid.ColumnSpan="2" Value="{Binding Progress}" Maximum="100" Height="6" Margin="0,8,0,0" />
                                 </Grid>
                             </Border>
                         </DataTemplate>

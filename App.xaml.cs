@@ -22,6 +22,7 @@ public partial class App : Application
         serviceCollection.AddSingleton<YtDlpService>();
         serviceCollection.AddSingleton<FFmpegService>();
         serviceCollection.AddSingleton<MediaWorkspace>();
+        serviceCollection.AddSingleton<IConfirmationService, ConfirmationService>();
 
         // Register ViewModels
         serviceCollection.AddSingleton<MainViewModel>();

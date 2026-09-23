@@ -1,36 +1,37 @@
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using MediaStudio.ViewModels;
+using NAudio.Wave;
 
 namespace MediaStudio.Views;
 
 public partial class AudioTrimmerView : UserControl
 {
-    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(100) };
+    private enum DragTarget { None, Start, End, Playhead }
+
+    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(50) };
+    private AudioFileReader? _audioReader;
+    private WaveOutEvent? _audioOutput;
+    private DragTarget _dragTarget;
+    private double _lastZoom = 1;
+
     public AudioTrimmerView()
     {
         InitializeComponent();
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
         SizeChanged += (_, _) => DrawWaveform();
-        _timer.Tick += (_, _) =>
-        {
-            if (DataContext is not AudioTrimmerViewModel vm) return;
-            vm.CurrentPositionSeconds = AudioPlayer.Position.TotalSeconds;
-            if (vm.CurrentPositionSeconds >= vm.EndSeconds) StopAtSelectionStart(vm);
-        };
-        var player = new MediaElement { Name = "AudioPlayer", LoadedBehavior = MediaState.Manual, Visibility = Visibility.Collapsed };
-        RegisterName("AudioPlayer", player);
-        ((Grid)Content).Children.Add(player);
+        _timer.Tick += (_, _) => UpdatePlaybackPosition();
     }
 
-    private MediaElement AudioPlayer => (MediaElement)FindName("AudioPlayer");
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         if (DataContext is not AudioTrimmerViewModel vm) return;
@@ -38,8 +39,10 @@ public partial class AudioTrimmerView : UserControl
         vm.RequestTogglePlay += TogglePlay;
         vm.WaveformPeaks.CollectionChanged += PeaksChanged;
         vm.PropertyChanged += ViewModelPropertyChanged;
+        if (File.Exists(vm.PreviewFilePath)) LoadPreview(vm.PreviewFilePath);
         DrawWaveform();
     }
+
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         if (DataContext is AudioTrimmerViewModel vm)
@@ -48,38 +51,255 @@ public partial class AudioTrimmerView : UserControl
             vm.RequestTogglePlay -= TogglePlay;
             vm.WaveformPeaks.CollectionChanged -= PeaksChanged;
             vm.PropertyChanged -= ViewModelPropertyChanged;
+            vm.IsPlaying = false;
         }
-        _timer.Stop(); AudioPlayer.Stop();
+        DisposePlayer();
     }
+
     private void PeaksChanged(object? sender, NotifyCollectionChangedEventArgs e) => DrawWaveform();
+
     private void ViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(AudioTrimmerViewModel.PreviewFilePath) && DataContext is AudioTrimmerViewModel vm && File.Exists(vm.PreviewFilePath))
-            AudioPlayer.Source = new Uri(vm.PreviewFilePath);
-    }
-    private void Seek(TimeSpan time) => AudioPlayer.Position = time;
-    private void TogglePlay()
-    {
-        if (DataContext is not AudioTrimmerViewModel vm || !vm.HasLoadedFile) return;
-        if (vm.IsPlaying) { AudioPlayer.Pause(); _timer.Stop(); vm.IsPlaying = false; }
-        else { if (AudioPlayer.Position.TotalSeconds < vm.StartSeconds || AudioPlayer.Position.TotalSeconds >= vm.EndSeconds) AudioPlayer.Position = TimeSpan.FromSeconds(vm.StartSeconds); AudioPlayer.Play(); _timer.Start(); vm.IsPlaying = true; }
-    }
-    private void StopAtSelectionStart(AudioTrimmerViewModel vm) { AudioPlayer.Pause(); AudioPlayer.Position = TimeSpan.FromSeconds(vm.StartSeconds); vm.IsPlaying = false; _timer.Stop(); }
-    private void ZoomSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e) { if (WaveformHost != null) { WaveformHost.Width = Math.Max(WaveformScroller.ActualWidth, 600) * e.NewValue; DrawWaveform(); } }
-    private void DrawWaveform()
-    {
-        if (WaveformCanvas == null || DataContext is not AudioTrimmerViewModel vm) return;
-        WaveformCanvas.Children.Clear();
-        var width = Math.Max(WaveformHost?.ActualWidth ?? 0, 600);
-        var height = Math.Max(WaveformCanvas.ActualHeight, 180);
-        WaveformCanvas.Width = width;
-        if (vm.WaveformPeaks.Count == 0) return;
-        var step = width / vm.WaveformPeaks.Count;
-        for (var i = 0; i < vm.WaveformPeaks.Count; i++)
+        if (DataContext is not AudioTrimmerViewModel vm) return;
+        if (e.PropertyName == nameof(AudioTrimmerViewModel.PreviewFilePath))
         {
-            var barHeight = Math.Max(2, vm.WaveformPeaks[i] * (height - 12));
-            var line = new Line { X1 = i * step, X2 = i * step, Y1 = (height - barHeight) / 2, Y2 = (height + barHeight) / 2, Stroke = new SolidColorBrush(Color.FromRgb(48, 174, 239)), StrokeThickness = Math.Max(1, step * .65) };
-            WaveformCanvas.Children.Add(line);
+            vm.IsPlaying = false;
+            if (File.Exists(vm.PreviewFilePath)) LoadPreview(vm.PreviewFilePath);
+            else DisposePlayer();
+        }
+        else if (e.PropertyName == nameof(AudioTrimmerViewModel.VolumePercent) && _audioReader is not null)
+            _audioReader.Volume = (float)(vm.VolumePercent / 100d);
+        else if (e.PropertyName is nameof(AudioTrimmerViewModel.StartSeconds) or nameof(AudioTrimmerViewModel.EndSeconds)
+                 or nameof(AudioTrimmerViewModel.CurrentPositionSeconds) or nameof(AudioTrimmerViewModel.TotalSeconds))
+        {
+            DrawOverlay();
+            if (e.PropertyName == nameof(AudioTrimmerViewModel.CurrentPositionSeconds) && vm.IsPlaying)
+                KeepPlayheadVisible(vm.CurrentPositionSeconds);
         }
     }
+
+    private void LoadPreview(string path)
+    {
+        DisposePlayer();
+        try
+        {
+            _audioReader = new AudioFileReader(path);
+            if (DataContext is AudioTrimmerViewModel vm)
+                _audioReader.Volume = (float)(vm.VolumePercent / 100d);
+            _audioOutput = new WaveOutEvent { DesiredLatency = 100 };
+            _audioOutput.Init(_audioReader);
+        }
+        catch
+        {
+            DisposePlayer();
+        }
+    }
+
+    private void DisposePlayer()
+    {
+        _timer.Stop();
+        _audioOutput?.Stop();
+        _audioOutput?.Dispose();
+        _audioReader?.Dispose();
+        _audioOutput = null;
+        _audioReader = null;
+    }
+
+    private void Seek(TimeSpan time)
+    {
+        if (_audioReader is null) return;
+        _audioReader.CurrentTime = TimeSpan.FromSeconds(Math.Clamp(time.TotalSeconds, 0, _audioReader.TotalTime.TotalSeconds));
+        if (DataContext is AudioTrimmerViewModel vm) vm.CurrentPositionSeconds = _audioReader.CurrentTime.TotalSeconds;
+    }
+
+    private void TogglePlay()
+    {
+        if (DataContext is not AudioTrimmerViewModel vm || !vm.HasLoadedFile || _audioOutput is null || _audioReader is null) return;
+        if (vm.IsPlaying)
+        {
+            _audioOutput.Pause();
+            _timer.Stop();
+            vm.IsPlaying = false;
+            return;
+        }
+        if (_audioReader.CurrentTime.TotalSeconds < vm.StartSeconds || _audioReader.CurrentTime.TotalSeconds >= vm.EndSeconds)
+            _audioReader.CurrentTime = TimeSpan.FromSeconds(vm.StartSeconds);
+        _audioOutput.Play();
+        _timer.Start();
+        vm.IsPlaying = true;
+    }
+
+    private void UpdatePlaybackPosition()
+    {
+        if (DataContext is not AudioTrimmerViewModel vm || _audioReader is null || _audioOutput is null) return;
+        vm.CurrentPositionSeconds = _audioReader.CurrentTime.TotalSeconds;
+        if (vm.CurrentPositionSeconds < vm.EndSeconds && _audioOutput.PlaybackState == PlaybackState.Playing) return;
+        _audioOutput.Pause();
+        _audioReader.CurrentTime = TimeSpan.FromSeconds(vm.StartSeconds);
+        vm.CurrentPositionSeconds = vm.StartSeconds;
+        vm.IsPlaying = false;
+        _timer.Stop();
+    }
+
+    private void ZoomSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (WaveformHost is null || WaveformScroller is null) return;
+        var viewport = Math.Max(WaveformScroller.ViewportWidth, 600);
+        var oldWidth = Math.Max(WaveformHost.ActualWidth, viewport * _lastZoom);
+        var centerRatio = oldWidth <= 0 ? 0 : (WaveformScroller.HorizontalOffset + viewport / 2) / oldWidth;
+        _lastZoom = e.NewValue;
+        WaveformHost.Width = viewport * e.NewValue;
+        WaveformHost.UpdateLayout();
+        DrawWaveform();
+        WaveformScroller.ScrollToHorizontalOffset(Math.Max(0, centerRatio * WaveformHost.Width - viewport / 2));
+    }
+
+    private void DrawWaveform()
+    {
+        if (WaveformCanvas is null || DataContext is not AudioTrimmerViewModel vm) return;
+        WaveformCanvas.Children.Clear();
+        var width = Math.Max(WaveformHost?.ActualWidth ?? 0, 600);
+        WaveformCanvas.Width = width;
+        DrawTimeline(width, vm.TotalSeconds);
+        if (vm.WaveformPeaks.Count > 0)
+        {
+            var step = width / vm.WaveformPeaks.Count;
+            const double center = 130;
+            const double waveformHeight = 176;
+            for (var i = 0; i < vm.WaveformPeaks.Count; i++)
+            {
+                var barHeight = Math.Max(2, vm.WaveformPeaks[i] * waveformHeight);
+                WaveformCanvas.Children.Add(new Line
+                {
+                    X1 = i * step, X2 = i * step,
+                    Y1 = center - barHeight / 2, Y2 = center + barHeight / 2,
+                    Stroke = new SolidColorBrush(Color.FromRgb(72, 181, 238)),
+                    StrokeThickness = Math.Max(1, step * .65)
+                });
+            }
+        }
+        DrawOverlay();
+    }
+
+    private void DrawTimeline(double width, double totalSeconds)
+    {
+        if (totalSeconds <= 0) return;
+        var targetTicks = Math.Max(4, (int)(width / 110));
+        var rawStep = totalSeconds / targetTicks;
+        var magnitude = Math.Pow(10, Math.Floor(Math.Log10(Math.Max(rawStep, .001))));
+        var normalized = rawStep / magnitude;
+        var nice = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+        var secondsPerTick = nice * magnitude;
+        for (var time = 0d; time <= totalSeconds + secondsPerTick / 2; time += secondsPerTick)
+        {
+            var x = time / totalSeconds * width;
+            WaveformCanvas.Children.Add(new Line { X1 = x, X2 = x, Y1 = 21, Y2 = 29, Stroke = Brushes.Gray, StrokeThickness = 1 });
+            var label = new TextBlock
+            {
+                Text = FormatTimelineTime(time), FontSize = 10,
+                Foreground = new SolidColorBrush(Color.FromRgb(178, 178, 178))
+            };
+            Canvas.SetLeft(label, Math.Min(x + 3, Math.Max(0, width - 54)));
+            Canvas.SetTop(label, 3);
+            WaveformCanvas.Children.Add(label);
+        }
+        WaveformCanvas.Children.Add(new Line { X1 = 0, X2 = width, Y1 = 29, Y2 = 29, Stroke = Brushes.DimGray, StrokeThickness = 1 });
+    }
+
+    private static string FormatTimelineTime(double seconds)
+    {
+        var time = TimeSpan.FromSeconds(Math.Max(0, seconds));
+        return time.TotalHours >= 1 ? time.ToString(@"h\:mm\:ss", CultureInfo.InvariantCulture) : time.ToString(@"m\:ss", CultureInfo.InvariantCulture);
+    }
+
+    private void DrawOverlay()
+    {
+        if (WaveformOverlay is null || WaveformHost is null || DataContext is not AudioTrimmerViewModel vm || vm.TotalSeconds <= 0) return;
+        WaveformOverlay.Children.Clear();
+        var width = Math.Max(WaveformHost.ActualWidth, 600);
+        WaveformOverlay.Width = width;
+        var startX = SecondsToX(vm.StartSeconds, width, vm.TotalSeconds);
+        var endX = SecondsToX(vm.EndSeconds, width, vm.TotalSeconds);
+        var playX = SecondsToX(vm.CurrentPositionSeconds, width, vm.TotalSeconds);
+        AddShade(0, startX);
+        AddShade(endX, Math.Max(0, width - endX));
+        var selection = new Rectangle { Width = Math.Max(0, endX - startX), Height = 194, Fill = new SolidColorBrush(Color.FromArgb(34, 30, 144, 255)) };
+        Canvas.SetLeft(selection, startX); Canvas.SetTop(selection, 30); WaveformOverlay.Children.Add(selection);
+        AddMarker(startX, Color.FromRgb(55, 200, 120), "เริ่ม");
+        AddMarker(endX, Color.FromRgb(255, 167, 38), "สิ้นสุด");
+        var playhead = new Line { X1 = playX, X2 = playX, Y1 = 30, Y2 = 224, Stroke = Brushes.White, StrokeThickness = 2 };
+        WaveformOverlay.Children.Add(playhead);
+        var head = new Polygon { Points = new PointCollection { new(playX - 5, 30), new(playX + 5, 30), new(playX, 38) }, Fill = Brushes.White };
+        WaveformOverlay.Children.Add(head);
+    }
+
+    private void AddShade(double x, double width)
+    {
+        var shade = new Rectangle { Width = Math.Max(0, width), Height = 194, Fill = new SolidColorBrush(Color.FromArgb(125, 0, 0, 0)) };
+        Canvas.SetLeft(shade, x); Canvas.SetTop(shade, 30); WaveformOverlay.Children.Add(shade);
+    }
+
+    private void AddMarker(double x, Color color, string labelText)
+    {
+        WaveformOverlay.Children.Add(new Line { X1 = x, X2 = x, Y1 = 28, Y2 = 224, Stroke = new SolidColorBrush(color), StrokeThickness = 3 });
+        var label = new Border
+        {
+            Background = new SolidColorBrush(color), CornerRadius = new CornerRadius(3), Padding = new Thickness(4, 1, 4, 1),
+            Child = new TextBlock { Text = labelText, Foreground = Brushes.Black, FontSize = 10, FontWeight = FontWeights.SemiBold }
+        };
+        Canvas.SetLeft(label, Math.Max(0, x - 14)); Canvas.SetTop(label, 31); WaveformOverlay.Children.Add(label);
+    }
+
+    private void WaveformHost_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (DataContext is not AudioTrimmerViewModel vm || !vm.HasLoadedFile) return;
+        var width = Math.Max(WaveformHost.ActualWidth, 600);
+        var x = Math.Clamp(e.GetPosition(WaveformHost).X, 0, width);
+        var startX = SecondsToX(vm.StartSeconds, width, vm.TotalSeconds);
+        var endX = SecondsToX(vm.EndSeconds, width, vm.TotalSeconds);
+        _dragTarget = Math.Abs(x - startX) <= 10 ? DragTarget.Start : Math.Abs(x - endX) <= 10 ? DragTarget.End : DragTarget.Playhead;
+        WaveformHost.CaptureMouse();
+        ApplyDrag(x, width, vm);
+        e.Handled = true;
+    }
+
+    private void WaveformHost_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (_dragTarget == DragTarget.None || e.LeftButton != MouseButtonState.Pressed || DataContext is not AudioTrimmerViewModel vm) return;
+        var width = Math.Max(WaveformHost.ActualWidth, 600);
+        ApplyDrag(Math.Clamp(e.GetPosition(WaveformHost).X, 0, width), width, vm);
+    }
+
+    private void WaveformHost_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        _dragTarget = DragTarget.None;
+        WaveformHost.ReleaseMouseCapture();
+    }
+
+    private void ApplyDrag(double x, double width, AudioTrimmerViewModel vm)
+    {
+        var seconds = x / width * vm.TotalSeconds;
+        switch (_dragTarget)
+        {
+            case DragTarget.Start: vm.StartSeconds = Math.Min(seconds, vm.EndSeconds - .01); break;
+            case DragTarget.End: vm.EndSeconds = Math.Max(seconds, vm.StartSeconds + .01); break;
+            default:
+                vm.CurrentPositionSeconds = seconds;
+                Seek(TimeSpan.FromSeconds(seconds));
+                break;
+        }
+    }
+
+    private void KeepPlayheadVisible(double seconds)
+    {
+        if (DataContext is not AudioTrimmerViewModel vm || vm.TotalSeconds <= 0) return;
+        var x = SecondsToX(seconds, Math.Max(WaveformHost.ActualWidth, 600), vm.TotalSeconds);
+        var left = WaveformScroller.HorizontalOffset;
+        var right = left + WaveformScroller.ViewportWidth;
+        if (x < left + 24 || x > right - 24)
+            WaveformScroller.ScrollToHorizontalOffset(Math.Max(0, x - WaveformScroller.ViewportWidth / 2));
+    }
+
+    private static double SecondsToX(double seconds, double width, double totalSeconds)
+        => Math.Clamp(seconds / Math.Max(totalSeconds, .01) * width, 0, width);
 }

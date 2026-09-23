@@ -86,6 +86,7 @@ public class DownloaderViewModel : ObservableObject
     public ObservableCollection<DownloadItem> DownloadQueue { get; } = new();
 
     public int ActiveDownloadsCount => DownloadQueue.Count(i => i.IsRunning);
+    public bool HasDownloadItems => DownloadQueue.Count > 0;
 
     public IAsyncRelayCommand PasteClipboardCommand { get; }
     public IAsyncRelayCommand FetchInfoCommand { get; }
@@ -116,7 +117,11 @@ public class DownloaderViewModel : ObservableObject
         SendToVideoTrimmerCommand = new RelayCommand<DownloadItem>(item => Send(item, ToolDestination.VideoTrimmer));
         SendToAudioTrimmerCommand = new RelayCommand<DownloadItem>(item => Send(item, ToolDestination.AudioTrimmer));
 
-        DownloadQueue.CollectionChanged += (s, e) => OnPropertyChanged(nameof(ActiveDownloadsCount));
+        DownloadQueue.CollectionChanged += (s, e) =>
+        {
+            OnPropertyChanged(nameof(ActiveDownloadsCount));
+            OnPropertyChanged(nameof(HasDownloadItems));
+        };
     }
 
     private async Task PasteClipboardAsync()
