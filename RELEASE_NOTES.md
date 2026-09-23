@@ -1,0 +1,42 @@
+MediaStudio เป็นโปรแกรม Windows สำหรับดาวน์โหลด แปลง บีบอัด และตัดไฟล์วิดีโอหรือเสียง
+
+## ดาวน์โหลดไฟล์ไหนดี
+
+### `MediaStudio-<version>-win-x64.zip`
+
+ไฟล์สำหรับผู้ใช้งานทั่วไปบน Windows 64-bit ภายในมี `MediaStudio.exe` ซึ่งรวม .NET Runtime ไว้แล้ว จึงไม่ต้องติดตั้ง Git, .NET SDK หรือ .NET Runtime
+
+วิธีใช้งาน:
+
+1. ดาวน์โหลดและแตกไฟล์ ZIP ลงในโฟลเดอร์ที่เขียนได้ เช่น Downloads หรือ Documents
+2. เปิด `MediaStudio.exe`
+3. ในการเปิดครั้งแรก ให้รอโปรแกรมดาวน์โหลด FFmpeg และ yt-dlp
+
+### `MediaStudio-<version>-win-x64.zip.sha256`
+
+ไฟล์ checksum สำหรับตรวจว่า Portable ZIP ดาวน์โหลดมาครบและไม่ถูกเปลี่ยนแปลง ไฟล์นี้ไม่ใช่โปรแกรมและไม่จำเป็นสำหรับการใช้งานทั่วไป
+
+ตรวจสอบด้วย PowerShell:
+
+```powershell
+Get-FileHash .\MediaStudio-<version>-win-x64.zip -Algorithm SHA256
+```
+
+ค่าที่ได้ต้องตรงกับค่าในไฟล์ `.sha256`
+
+### `Source code (zip)`
+
+ซอร์สโค้ดของรุ่นนี้ในรูปแบบ ZIP ซึ่ง GitHub สร้างให้อัตโนมัติ เหมาะสำหรับนักพัฒนาที่ต้องการอ่าน แก้ไข หรือ build โปรแกรมเอง ไฟล์นี้ไม่มี .NET Runtime และไม่ใช่ Portable app
+
+### `Source code (tar.gz)`
+
+ซอร์สโค้ดเดียวกันในรูปแบบ TAR.GZ เหมาะกับเครื่องมือบน Linux, macOS และงานพัฒนา เนื้อหาโปรเจกต์เหมือนกับ Source code (zip)
+
+## ข้อกำหนดและหมายเหตุ
+
+- รองรับ Windows x64
+- ต้องใช้อินเทอร์เน็ตเพื่อเตรียม FFmpeg และ yt-dlp ในครั้งแรก รวมถึงใช้ฟังก์ชันดาวน์โหลดสื่อ
+- ควรแตก ZIP ก่อนเปิดโปรแกรม และเก็บโปรแกรมไว้ในโฟลเดอร์ที่ผู้ใช้มีสิทธิ์เขียน
+- Windows SmartScreen อาจแสดงคำเตือน เนื่องจากโปรแกรมยังไม่มี code-signing certificate
+
+สำหรับผู้ใช้งานทั่วไป ให้ดาวน์โหลดเฉพาะ `MediaStudio-<version>-win-x64.zip`

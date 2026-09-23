@@ -123,6 +123,7 @@ MediaStudio/
   ViewModels/                    คิวงาน คำสั่ง และสถานะหน้าจอ
   Views/                         หน้า Downloader, Converter, Trimmer, Settings
   Tests/                         ชุดทดสอบ regression และวิธีรัน
+  RELEASE_NOTES.md               แม่แบบคำอธิบายไฟล์ใน GitHub Release
 ```
 
 ใช้รูปแบบ MVVM และลงทะเบียน service กับ view model ผ่าน Dependency Injection แพ็กเกจที่กำหนดในโปรเจกต์คือ CliWrap 3.10.5, CommunityToolkit.Mvvm 8.4.2, Microsoft.Extensions.DependencyInjection 10.0.11 และ WPF-UI 4.3.0

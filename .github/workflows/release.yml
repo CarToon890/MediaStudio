@@ -69,10 +69,13 @@ jobs:
           $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $archive" | Set-Content "$archive.sha256" -Encoding ascii
 
+          (Get-Content RELEASE_NOTES.md -Raw).Replace('<version>', $env:RELEASE_TAG) |
+            Set-Content artifacts/release-notes.md -Encoding utf8
+
       - name: Create GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $archive = "MediaStudio-$env:RELEASE_TAG-win-x64.zip"
-          gh release create $env:RELEASE_TAG $archive "$archive.sha256" --verify-tag --generate-notes --title "MediaStudio $env:RELEASE_TAG"
+          gh release create $env:RELEASE_TAG $archive "$archive.sha256" --verify-tag --notes-file artifacts/release-notes.md --title "MediaStudio $env:RELEASE_TAG"
