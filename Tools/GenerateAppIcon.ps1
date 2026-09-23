@@ -1,5 +1,5 @@
 param(
-    [string]$SourcePath = (Join-Path $PSScriptRoot '..\Assets\MediaStudio.Source.png'),
+    [string]$SourcePath = (Join-Path $PSScriptRoot '..\Assets\MediaStudio.Cutout.png'),
     [string]$PngPath = (Join-Path $PSScriptRoot '..\Assets\MediaStudio.png'),
     [string]$IcoPath = (Join-Path $PSScriptRoot '..\Assets\MediaStudio.ico')
 )
@@ -7,16 +7,64 @@ param(
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 
-function New-RoundedPath([System.Drawing.RectangleF]$rect, [float]$radius) {
-    $path = [System.Drawing.Drawing2D.GraphicsPath]::new()
-    $diameter = $radius * 2
-    $path.AddArc($rect.Left, $rect.Top, $diameter, $diameter, 180, 90)
-    $path.AddArc($rect.Right - $diameter, $rect.Top, $diameter, $diameter, 270, 90)
-    $path.AddArc($rect.Right - $diameter, $rect.Bottom - $diameter, $diameter, $diameter, 0, 90)
-    $path.AddArc($rect.Left, $rect.Bottom - $diameter, $diameter, $diameter, 90, 90)
-    $path.CloseFigure()
-    return $path
+$drawingAssemblies = @([System.Drawing.Bitmap].Assembly.Location, [System.Drawing.Rectangle].Assembly.Location)
+Add-Type -ReferencedAssemblies $drawingAssemblies -TypeDefinition @'
+using System;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
+
+public static class IconAlphaCleaner
+{
+    public static void KeepCenterComponent(Bitmap bitmap)
+    {
+        var rectangle = new Rectangle(0, 0, bitmap.Width, bitmap.Height);
+        var data = bitmap.LockBits(rectangle, ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
+        try
+        {
+            var bytes = Math.Abs(data.Stride) * data.Height;
+            var pixels = new byte[bytes];
+            Marshal.Copy(data.Scan0, pixels, 0, bytes);
+            var keep = new bool[bitmap.Width * bitmap.Height];
+            var queue = new int[bitmap.Width * bitmap.Height];
+            var queueHead = 0;
+            var queueTail = 0;
+            var center = (bitmap.Height / 2) * bitmap.Width + bitmap.Width / 2;
+            queue[queueTail++] = center;
+            keep[center] = true;
+            while (queueHead < queueTail)
+            {
+                var index = queue[queueHead++];
+                var x = index % bitmap.Width;
+                var y = index / bitmap.Width;
+                Visit(x - 1, y); Visit(x + 1, y); Visit(x, y - 1); Visit(x, y + 1);
+            }
+
+            for (var y = 0; y < bitmap.Height; y++)
+            for (var x = 0; x < bitmap.Width; x++)
+            {
+                var pixelIndex = y * bitmap.Width + x;
+                if (keep[pixelIndex]) continue;
+                var offset = y * data.Stride + x * 4;
+                pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = pixels[offset + 3] = 0;
+            }
+            Marshal.Copy(pixels, 0, data.Scan0, bytes);
+
+            void Visit(int x, int y)
+            {
+                if (x < 0 || y < 0 || x >= bitmap.Width || y >= bitmap.Height) return;
+                var pixelIndex = y * bitmap.Width + x;
+                if (keep[pixelIndex]) return;
+                var alpha = pixels[y * data.Stride + x * 4 + 3];
+                if (alpha < 6) return;
+                keep[pixelIndex] = true;
+                queue[queueTail++] = pixelIndex;
+            }
+        }
+        finally { bitmap.UnlockBits(data); }
+    }
 }
+'@
 
 function Resize-Image([System.Drawing.Image]$image, [int]$size) {
     $bitmap = [System.Drawing.Bitmap]::new($size, $size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
@@ -40,22 +88,19 @@ $master = [System.Drawing.Bitmap]::new(1024, 1024, [System.Drawing.Imaging.Pixel
 $graphics = [System.Drawing.Graphics]::FromImage($master)
 try {
     $graphics.Clear([System.Drawing.Color]::Transparent)
+    $graphics.CompositingMode = [System.Drawing.Drawing2D.CompositingMode]::SourceCopy
     $graphics.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
     $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
     $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $path = New-RoundedPath ([System.Drawing.RectangleF]::new(35, 35, 954, 954)) 150
-    try {
-        $graphics.SetClip($path)
-        $destination = [System.Drawing.Rectangle]::new(0, 0, 1024, 1024)
-        $crop = [System.Drawing.Rectangle]::new(115, 115, 1024, 1024)
-        $graphics.DrawImage($source, $destination, $crop, [System.Drawing.GraphicsUnit]::Pixel)
-    }
-    finally { $path.Dispose() }
+    $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+    $graphics.DrawImage($source, 0, 0, 1024, 1024)
 }
 finally {
     $graphics.Dispose()
     $source.Dispose()
 }
+
+[IconAlphaCleaner]::KeepCenterComponent($master)
 
 $master.Save($PngPath, [System.Drawing.Imaging.ImageFormat]::Png)
 $sizes = @(16, 24, 32, 48, 64, 128, 256)
