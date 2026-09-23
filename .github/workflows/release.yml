@@ -56,6 +56,10 @@ jobs:
         shell: pwsh
         run: dotnet publish MediaStudio.csproj -p:PublishProfile=win-x64 -o artifacts/publish
 
+      - name: Verify application startup
+        shell: pwsh
+        run: ./Tests/StartupSmoke.ps1 -AppPath artifacts/publish/MediaStudio.exe -FFmpegPath "${{ steps.ffmpeg.outputs.path }}"
+
       - name: Package portable app
         shell: pwsh
         run: |

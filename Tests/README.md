@@ -9,3 +9,5 @@ dotnet run --project Tests/MediaStudio.RegressionTests.csproj -c Release -- "C:\
 ```
 
 These checks use synthetic media and a fake HTTP handler. They cover queue changes during conversion, cancellation, output collisions, Windows file-name validation, all supported conversion formats, waveform generation, videos without audio, MP3/WAV/FLAC trimming, workspace persistence and routing, and interrupted engine downloads. They do not access the network or the user's saved settings. Temporary media is deleted after the run.
+
+The release workflow also runs `StartupSmoke.ps1` against the published single-file executable. It opens the real WPF application with isolated temporary engines and fails when the process exits during startup, including XAML resource and dependency-injection errors.
