@@ -36,18 +36,23 @@
 - ดาวน์โหลดลงไฟล์ชั่วคราวและย้ายเป็นไฟล์ปลายทางเมื่อเสร็จ เพื่อไม่ให้ไฟล์ที่โหลดไม่ครบถูกใช้เป็นเอนจิน การแตก FFmpeg ใช้ไฟล์ชั่วคราวเช่นกัน
 - ปุ่มอัปเดตเอนจินใน Settings ตรวจและโหลดไฟล์ที่ขาด ปัจจุบันยังไม่ตรวจเวอร์ชันหรือแทนที่เอนจินที่มีอยู่แล้ว
 
-## สิ่งที่ต้องใช้
+## สำหรับผู้ใช้ทั่วไป
 
-- Windows สำหรับรันแอป WPF
-- .NET 9 SDK สำหรับ build และรันจากซอร์สโค้ด
-- Git สำหรับ clone repository
-- อินเทอร์เน็ตสำหรับ restore แพ็กเกจ ดาวน์โหลดเอนจินครั้งแรก และดาวน์โหลดสื่อ
-- สิทธิ์เขียนในโฟลเดอร์แอปสำหรับติดตั้งเอนจิน และในโฟลเดอร์ผลลัพธ์
-- NVIDIA GPU และไดรเวอร์ที่รองรับ NVENC หากต้องการใช้การเร่งด้วย GPU
+ผู้ใช้ทั่วไปไม่ต้องติดตั้ง Git, .NET SDK หรือ .NET Runtime และไม่ต้องดาวน์โหลด Source Code ZIP ของ GitHub:
 
-## เริ่มต้นใช้งาน
+1. เปิดหน้า [Latest Release](https://github.com/CarToon890/MediaStudio/releases/latest)
+2. ดาวน์โหลด `MediaStudio-<version>-win-x64.zip`
+3. แตกไฟล์ทั้งหมดลงโฟลเดอร์ที่เขียนได้ เช่น Downloads หรือ Documents อย่าเปิดโปรแกรมจากภายใน ZIP
+4. เปิด `MediaStudio.exe`
+5. เมื่อเปิดครั้งแรก รอให้โปรแกรมดาวน์โหลด FFmpeg และ yt-dlp ให้เสร็จ
 
-รันคำสั่งใน PowerShell:
+แพ็กเกจ Portable รองรับ Windows x64 และรวม .NET Runtime ไว้แล้ว ต้องใช้อินเทอร์เน็ตในการเตรียมเอนจินครั้งแรกและดาวน์โหลดสื่อ เนื่องจากโปรแกรมยังไม่มี code-signing certificate Windows SmartScreen อาจแสดงคำเตือนก่อนเปิดใช้งาน
+
+ผู้ใช้ต้องมีสิทธิ์เขียนในโฟลเดอร์ที่แตกไฟล์ เพราะโปรแกรมเก็บเอนจินไว้ในโฟลเดอร์ `bin` ข้าง executable หากต้องการใช้ NVIDIA NVENC ต้องมี NVIDIA GPU และไดรเวอร์ที่รองรับ
+
+## สำหรับนักพัฒนา
+
+ต้องมี Git และ .NET 9 SDK จากนั้นรันคำสั่งใน PowerShell:
 
 ```powershell
 git clone https://github.com/CarToon890/MediaStudio.git
@@ -56,7 +61,7 @@ dotnet restore
 dotnet run --project MediaStudio.csproj
 ```
 
-เมื่อเปิดครั้งแรก โปรแกรมจะตรวจและดาวน์โหลดเอนจินที่ยังไม่มี รอให้เอนจินพร้อมก่อนเริ่มงาน หรือเปิด Settings เพื่อตรวจสถานะ
+คำสั่งข้างต้นใช้สำหรับพัฒนาจากซอร์สโค้ด ผู้ใช้งานทั่วไปควรใช้ Portable ZIP จากหน้า Releases
 
 Build แบบ Release:
 
@@ -72,14 +77,34 @@ dotnet build MediaStudio.csproj -c Release
 
 การ build ปกติยังต้องใช้ .NET Desktop Runtime 9 บนเครื่องที่รัน หาก build ติดข้อผิดพลาดว่าไฟล์ถูกใช้งาน ให้ปิดแอปที่รันจากโฟลเดอร์ผลลัพธ์นั้นแล้วลองใหม่
 
+สร้าง Portable executable แบบเดียวกับที่ใช้ใน GitHub Releases:
+
+```powershell
+dotnet publish MediaStudio.csproj -p:PublishProfile=win-x64
+```
+
+ผลลัพธ์อยู่ใน `bin\Release\net9.0-windows\win-x64\publish\` และรวม .NET Runtime ไว้แล้ว
+
 ## ไฟล์และการตั้งค่า
 
 - ผลลัพธ์เริ่มต้น: `%USERPROFILE%\Downloads\MediaStudio\` เปลี่ยนได้ใน Settings และใช้ร่วมกันสำหรับดาวน์โหลด แปลงไฟล์ และตัดคลิป
 - การตั้งค่าผู้ใช้: `%APPDATA%\MediaStudio\settings.json`
 - ผลลัพธ์ Debug: `bin\Debug\net9.0-windows\`
 - ผลลัพธ์ Release: `bin\Release\net9.0-windows\`
+- ผลลัพธ์ Portable: `bin\Release\net9.0-windows\win-x64\publish\MediaStudio.exe`
 - เอนจินที่แอปดาวน์โหลด: โฟลเดอร์ `bin\` ใต้ตำแหน่ง executable เช่น `bin\Release\net9.0-windows\bin\`
 - `bin/` และ `obj/` ไม่ถูกเก็บใน Git ตาม `.gitignore` จึงต้อง build และเตรียมเอนจินหลัง clone
+
+## การออกรุ่น
+
+เมื่อ push tag ที่ตรงรูปแบบ semantic version เช่น `v1.0.0` GitHub Actions จะ build และทดสอบโปรเจกต์ จากนั้น publish สำหรับ Windows x64 สร้าง ZIP กับไฟล์ SHA-256 checksum และแนบทั้งสองไฟล์กับ GitHub Release อัตโนมัติ
+
+```powershell
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+ควรสร้าง tag หลังตรวจการทำงานบน Windows x64 แล้วเท่านั้น Source Code ZIP/TAR ที่ GitHub สร้างอัตโนมัติไม่มี .NET Runtime และไม่ใช่แพ็กเกจ Portable สำหรับผู้ใช้
 
 ## โครงสร้างโปรเจกต์
 

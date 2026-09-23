@@ -1,0 +1,78 @@
+name: Release Windows portable app
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build, test, and release win-x64
+    runs-on: windows-latest
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+
+    steps:
+      - name: Validate tag
+        shell: pwsh
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') {
+            throw "Release tags must use the form v1.2.3."
+          }
+
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Restore and build
+        shell: pwsh
+        run: |
+          dotnet restore MediaStudio.csproj
+          dotnet build MediaStudio.csproj -c Release --no-restore
+
+      - name: Locate FFmpeg for regression tests
+        id: ffmpeg
+        shell: pwsh
+        run: |
+          $command = Get-Command ffmpeg -ErrorAction SilentlyContinue
+          if (-not $command) {
+            choco install ffmpeg --yes --no-progress
+            $command = Get-Command ffmpeg -ErrorAction Stop
+          }
+          "path=$($command.Source)" >> $env:GITHUB_OUTPUT
+
+      - name: Run regression tests
+        shell: pwsh
+        run: dotnet run --project Tests/MediaStudio.RegressionTests.csproj -c Release -- "${{ steps.ffmpeg.outputs.path }}"
+
+      - name: Publish self-contained app
+        shell: pwsh
+        run: dotnet publish MediaStudio.csproj -p:PublishProfile=win-x64 -o artifacts/publish
+
+      - name: Package portable app
+        shell: pwsh
+        run: |
+          $publishFiles = Get-ChildItem artifacts/publish -File
+          if ($publishFiles.Count -ne 1 -or $publishFiles[0].Name -ne 'MediaStudio.exe') {
+            throw "Expected a single MediaStudio.exe publish output. Found: $($publishFiles.Name -join ', ')"
+          }
+
+          $archive = "MediaStudio-$env:RELEASE_TAG-win-x64.zip"
+          Compress-Archive -Path artifacts/publish/MediaStudio.exe -DestinationPath $archive
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $archive" | Set-Content "$archive.sha256" -Encoding ascii
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $archive = "MediaStudio-$env:RELEASE_TAG-win-x64.zip"
+          gh release create $env:RELEASE_TAG $archive "$archive.sha256" --verify-tag --generate-notes --title "MediaStudio $env:RELEASE_TAG"
