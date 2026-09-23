@@ -18,6 +18,7 @@ public class ConverterViewModel : ObservableObject
     private readonly FFmpegService _ffmpegService;
     private readonly SettingsService _settingsService;
     private readonly DependencyService _dependencyService;
+    private readonly MediaWorkspace _workspace;
     private CancellationTokenSource? _convertCts;
 
     private string _selectedTargetFormat = "MP4";
@@ -70,12 +71,15 @@ public class ConverterViewModel : ObservableObject
     public IRelayCommand<ConversionItem> PlayItemCommand { get; }
     public IRelayCommand<ConversionItem> CancelTaskCommand { get; }
     public IRelayCommand CancelAllCommand { get; }
+    public IRelayCommand<ConversionItem> SendToVideoTrimmerCommand { get; }
+    public IRelayCommand<ConversionItem> SendToAudioTrimmerCommand { get; }
 
-    public ConverterViewModel(FFmpegService ffmpegService, SettingsService settingsService, DependencyService dependencyService)
+    public ConverterViewModel(FFmpegService ffmpegService, SettingsService settingsService, DependencyService dependencyService, MediaWorkspace workspace)
     {
         _ffmpegService = ffmpegService;
         _settingsService = settingsService;
         _dependencyService = dependencyService;
+        _workspace = workspace;
 
         SelectFilesCommand = new RelayCommand(SelectFiles);
         StartConversionCommand = new AsyncRelayCommand(StartConversionAsync);
@@ -85,6 +89,8 @@ public class ConverterViewModel : ObservableObject
         PlayItemCommand = new RelayCommand<ConversionItem>(PlayItem);
         CancelTaskCommand = new RelayCommand<ConversionItem>(CancelTask);
         CancelAllCommand = new RelayCommand(CancelAll);
+        SendToVideoTrimmerCommand = new RelayCommand<ConversionItem>(item => Send(item, ToolDestination.VideoTrimmer));
+        SendToAudioTrimmerCommand = new RelayCommand<ConversionItem>(item => Send(item, ToolDestination.AudioTrimmer));
 
         ConversionList.CollectionChanged += (s, e) => OnPropertyChanged(nameof(ActiveConversionsCount));
     }
@@ -133,6 +139,7 @@ public class ConverterViewModel : ObservableObject
                 };
 
                 ConversionList.Add(item);
+                _workspace.Register(path, "ไฟล์นำเข้า");
             }
         }
 
@@ -185,7 +192,8 @@ public class ConverterViewModel : ObservableObject
                 item.Cts = itemCts;
                 try
                 {
-                    await _ffmpegService.ConvertAsync(item, outputFolder, useNvenc, itemCts.Token);
+                    var result = await _ffmpegService.ConvertAsync(item, outputFolder, useNvenc, itemCts.Token);
+                    if (result.Success) _workspace.Register(result.OutputPath, "Converter");
                 }
                 finally
                 {
@@ -303,5 +311,12 @@ public class ConverterViewModel : ObservableObject
             }
         }
         catch { }
+    }
+
+    private void Send(ConversionItem? item, ToolDestination destination)
+    {
+        if (item == null || !item.IsCompleted || !File.Exists(item.OutputPath)) return;
+        var asset = _workspace.Register(item.OutputPath, "Converter");
+        _workspace.RequestTransfer(asset, destination);
     }
 }

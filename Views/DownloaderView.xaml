@@ -18,7 +18,7 @@
 
         <!-- Header -->
         <StackPanel Grid.Row="0" Margin="0,0,0,20">
-            <ui:TextBlock Text="Media Downloader" FontTypography="Title" />
+            <ui:TextBlock Text="ดาวน์โหลดมีเดีย" FontTypography="Title" />
             <ui:TextBlock Text="ดาวน์โหลดวิดีโอและเพลงคุณภาพสูงจาก YouTube, TikTok, Facebook, Twitter และอื่นๆ" 
                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,4,0,0" />
         </StackPanel>
@@ -64,7 +64,8 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,20,0">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,20,0"
+                                Visibility="{Binding IsAudioOnly, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
                         <ui:TextBlock Text="ความละเอียด:" VerticalAlignment="Center" Margin="0,0,8,0" />
                         <ComboBox ItemsSource="{Binding QualityOptions}" SelectedItem="{Binding SelectedQuality}" Width="130" />
                     </StackPanel>
@@ -76,7 +77,7 @@
                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
 
                     <ui:Button Grid.Column="3" Content="เริ่มดาวน์โหลด" Appearance="Success" Icon="{ui:SymbolIcon Symbol=ArrowDownload24}"
-                               Command="{Binding StartDownloadCommand}" IsEnabled="{Binding IsLoadingInfo, Converter={StaticResource InverseBooleanConverter}}" />
+                               Command="{Binding StartDownloadCommand}" IsEnabled="{Binding HasMediaInfo}" />
                 </Grid>
             </Grid>
         </Border>
@@ -98,6 +99,13 @@
                     <ui:TextBlock Text="{Binding CurrentMediaInfo.Title}" FontTypography="Subtitle" TextWrapping="Wrap" MaxHeight="50" />
                     <ui:TextBlock Text="{Binding CurrentMediaInfo.Author, StringFormat='ผู้สร้าง: {0}'}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,4,0,0" />
                     <ui:TextBlock Text="{Binding CurrentMediaInfo.DurationFormatted, StringFormat='ความยาว: {0}'}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />
+                    <ui:TextBlock Text="ชื่อไฟล์ที่จะบันทึก" FontWeight="SemiBold" Margin="0,10,0,4" />
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <ui:TextBox Text="{Binding OutputFileName, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="ระบุชื่อไฟล์" />
+                        <Border Grid.Column="1" Background="{DynamicResource ControlFillColorDefaultBrush}" Padding="10,7" CornerRadius="4" Margin="6,0,0,0"><ui:TextBlock Text="{Binding OutputExtension}" VerticalAlignment="Center"/></Border>
+                    </Grid>
+                    <ui:TextBlock Text="{Binding FileNameError}" Foreground="#FF6B6B" Margin="0,4,0,0" Visibility="{Binding HasFileNameError, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                 </StackPanel>
             </Grid>
         </Border>
@@ -112,7 +120,7 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <ui:TextBlock Grid.Row="0" Text="รายการดาวน์โหลด (Queue &amp; History)" FontTypography="Subtitle" Margin="0,0,0,12" />
+                <ui:TextBlock Grid.Row="0" Text="คิวและประวัติการดาวน์โหลด" FontTypography="Subtitle" Margin="0,0,0,12" />
 
                 <ListBox Grid.Row="1" ItemsSource="{Binding DownloadQueue}" Background="Transparent" BorderThickness="0">
                     <ListBox.ItemTemplate>
@@ -149,6 +157,15 @@
                                         <ui:Button Icon="{ui:SymbolIcon Symbol=FolderOpen24}" ToolTip="เปิดโฟลเดอร์" 
                                                    Command="{Binding DataContext.OpenOutputFolderCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" 
                                                    CommandParameter="{Binding}" Margin="0,0,4,0" />
+                                        <ui:Button Content="แปลง" ToolTip="ส่งไปแปลงไฟล์"
+                                                   Command="{Binding DataContext.SendToConverterCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}" Margin="0,0,4,0"
+                                                   Visibility="{Binding IsCompleted, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                        <ui:Button Content="ตัดวิดีโอ" ToolTip="ส่งไปตัดวิดีโอ"
+                                                   Command="{Binding DataContext.SendToVideoTrimmerCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}" Margin="0,0,4,0"
+                                                   Visibility="{Binding CanSendToVideoTrimmer, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                        <ui:Button Content="ตัดเสียง" ToolTip="ส่งไปตัดเสียง"
+                                                   Command="{Binding DataContext.SendToAudioTrimmerCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}" Margin="0,0,4,0"
+                                                   Visibility="{Binding IsCompleted, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                         <ui:Button Icon="{ui:SymbolIcon Symbol=Dismiss24}" ToolTip="ลบรายการ" 
                                                    Command="{Binding DataContext.RemoveItemCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" 
                                                    CommandParameter="{Binding}" />

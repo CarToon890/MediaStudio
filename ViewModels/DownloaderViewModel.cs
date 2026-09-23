@@ -17,6 +17,7 @@ public class DownloaderViewModel : ObservableObject
     private readonly YtDlpService _ytDlpService;
     private readonly SettingsService _settingsService;
     private readonly DependencyService _dependencyService;
+    private readonly MediaWorkspace _workspace;
 
     private string _urlInput = string.Empty;
     public string UrlInput { get => _urlInput; set => SetProperty(ref _urlInput, value); }
@@ -43,7 +44,32 @@ public class DownloaderViewModel : ObservableObject
     public string SelectedQuality { get => _selectedQuality; set => SetProperty(ref _selectedQuality, value); }
 
     private bool _isAudioOnly;
-    public bool IsAudioOnly { get => _isAudioOnly; set => SetProperty(ref _isAudioOnly, value); }
+    public bool IsAudioOnly
+    {
+        get => _isAudioOnly;
+        set
+        {
+            if (SetProperty(ref _isAudioOnly, value)) OnPropertyChanged(nameof(OutputExtension));
+        }
+    }
+
+    private string _outputFileName = string.Empty;
+    public string OutputFileName
+    {
+        get => _outputFileName;
+        set
+        {
+            if (SetProperty(ref _outputFileName, value))
+            {
+                FileNameError = FileNameService.TryNormalizeBaseName(value, out _, out var error) ? string.Empty : error;
+            }
+        }
+    }
+
+    private string _fileNameError = string.Empty;
+    public string FileNameError { get => _fileNameError; set { if (SetProperty(ref _fileNameError, value)) OnPropertyChanged(nameof(HasFileNameError)); } }
+    public bool HasFileNameError => !string.IsNullOrEmpty(FileNameError);
+    public string OutputExtension => IsAudioOnly ? ".mp3" : ".mp4";
 
     private string _statusText = "วางลิงก์วิดีโอเพื่อเริ่มต้นดาวน์โหลด";
     public string StatusText { get => _statusText; set => SetProperty(ref _statusText, value); }
@@ -68,12 +94,16 @@ public class DownloaderViewModel : ObservableObject
     public IRelayCommand<DownloadItem> PlayItemCommand { get; }
     public IRelayCommand<DownloadItem> CancelTaskCommand { get; }
     public IRelayCommand<DownloadItem> RemoveItemCommand { get; }
+    public IRelayCommand<DownloadItem> SendToConverterCommand { get; }
+    public IRelayCommand<DownloadItem> SendToVideoTrimmerCommand { get; }
+    public IRelayCommand<DownloadItem> SendToAudioTrimmerCommand { get; }
 
-    public DownloaderViewModel(YtDlpService ytDlpService, SettingsService settingsService, DependencyService dependencyService)
+    public DownloaderViewModel(YtDlpService ytDlpService, SettingsService settingsService, DependencyService dependencyService, MediaWorkspace workspace)
     {
         _ytDlpService = ytDlpService;
         _settingsService = settingsService;
         _dependencyService = dependencyService;
+        _workspace = workspace;
 
         PasteClipboardCommand = new AsyncRelayCommand(PasteClipboardAsync);
         FetchInfoCommand = new AsyncRelayCommand(FetchInfoAsync);
@@ -82,6 +112,9 @@ public class DownloaderViewModel : ObservableObject
         PlayItemCommand = new RelayCommand<DownloadItem>(PlayItem);
         CancelTaskCommand = new RelayCommand<DownloadItem>(CancelTask);
         RemoveItemCommand = new RelayCommand<DownloadItem>(RemoveItem);
+        SendToConverterCommand = new RelayCommand<DownloadItem>(item => Send(item, ToolDestination.Converter));
+        SendToVideoTrimmerCommand = new RelayCommand<DownloadItem>(item => Send(item, ToolDestination.VideoTrimmer));
+        SendToAudioTrimmerCommand = new RelayCommand<DownloadItem>(item => Send(item, ToolDestination.AudioTrimmer));
 
         DownloadQueue.CollectionChanged += (s, e) => OnPropertyChanged(nameof(ActiveDownloadsCount));
     }
@@ -108,6 +141,8 @@ public class DownloaderViewModel : ObservableObject
     {
         if (string.IsNullOrWhiteSpace(UrlInput)) return;
 
+        CurrentMediaInfo = null;
+        OutputFileName = string.Empty;
         IsLoadingInfo = true;
         StatusText = "กำลังดึงข้อมูลวิดีโอ...";
 
@@ -123,6 +158,7 @@ public class DownloaderViewModel : ObservableObject
             if (info != null)
             {
                 CurrentMediaInfo = info;
+                OutputFileName = FileNameService.SanitizeSuggestedName(info.Title);
                 StatusText = $"พบข้อมูล: {info.Title}";
             }
             else
@@ -143,8 +179,14 @@ public class DownloaderViewModel : ObservableObject
     private async Task StartDownloadAsync()
     {
         if (string.IsNullOrWhiteSpace(UrlInput)) return;
+        if (!FileNameService.TryNormalizeBaseName(OutputFileName, out var normalizedName, out var fileNameError))
+        {
+            FileNameError = fileNameError;
+            return;
+        }
 
         var cts = new CancellationTokenSource();
+        var mediaDurationSeconds = CurrentMediaInfo?.Duration.TotalSeconds ?? 0;
         var downloadItem = new DownloadItem
         {
             Title = CurrentMediaInfo?.Title ?? "กำลังเตรียมการ...",
@@ -152,6 +194,7 @@ public class DownloaderViewModel : ObservableObject
             ThumbnailUrl = CurrentMediaInfo?.ThumbnailUrl ?? string.Empty,
             Quality = SelectedQuality,
             IsAudioOnly = IsAudioOnly,
+            RequestedFileName = normalizedName,
             Status = TaskState.Queued,
             StatusMessage = "รอเริ่มดาวน์โหลด...",
             Cts = cts
@@ -169,11 +212,13 @@ public class DownloaderViewModel : ObservableObject
         OnPropertyChanged(nameof(ActiveDownloadsCount));
         UrlInput = string.Empty;
         CurrentMediaInfo = null;
+        OutputFileName = string.Empty;
 
         var outputFolder = _settingsService.Settings.DownloadDirectory;
         Directory.CreateDirectory(outputFolder);
 
-        await _ytDlpService.DownloadAsync(downloadItem, outputFolder, cts.Token);
+        var result = await _ytDlpService.DownloadAsync(downloadItem, outputFolder, cts.Token);
+        if (result.Success) _workspace.Register(result.OutputPath, "Downloader", mediaDurationSeconds);
         OnPropertyChanged(nameof(ActiveDownloadsCount));
     }
 
@@ -246,5 +291,12 @@ public class DownloaderViewModel : ObservableObject
             DownloadQueue.Remove(item);
             OnPropertyChanged(nameof(ActiveDownloadsCount));
         }
+    }
+
+    private void Send(DownloadItem? item, ToolDestination destination)
+    {
+        if (item == null || !item.IsCompleted || !File.Exists(item.OutputPath)) return;
+        var asset = _workspace.Register(item.OutputPath, "Downloader");
+        _workspace.RequestTransfer(asset, destination);
     }
 }

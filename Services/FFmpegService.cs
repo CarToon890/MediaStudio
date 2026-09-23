@@ -54,15 +54,16 @@ public class FFmpegService
         return TimeSpan.Zero;
     }
 
-    public async Task<bool> ConvertAsync(ConversionItem item, string outputFolder, bool useNvenc, CancellationToken ct = default)
+    public async Task<MediaOperationResult> ConvertAsync(ConversionItem item, string outputFolder, bool useNvenc, CancellationToken ct = default)
     {
         if (!File.Exists(_dependencyService.FFmpegPath) || !File.Exists(item.SourceFilePath))
         {
             item.Status = TaskState.Failed;
             item.StatusMessage = "ไม่พบไฟล์ต้นทางหรือเอนจิน FFmpeg";
-            return false;
+            return MediaOperationResult.Failed(item.StatusMessage);
         }
 
+        string? outputFilePath = null;
         try
         {
             Directory.CreateDirectory(outputFolder);
@@ -75,7 +76,7 @@ public class FFmpegService
 
             var baseName = Path.GetFileNameWithoutExtension(item.SourceFilePath);
             var ext = item.TargetFormat.ToLowerInvariant();
-            var outputFilePath = ReserveOutputPath(outputFolder, $"{baseName}_converted", ext);
+            outputFilePath = ReserveOutputPath(outputFolder, $"{baseName}_converted", ext);
 
             var (success, error) = await ExecuteConversionAsync(item, outputFilePath, totalSeconds, useNvenc, ct);
 
@@ -92,26 +93,29 @@ public class FFmpegService
                 item.Status = TaskState.Completed;
                 item.StatusMessage = "แปลงไฟล์เสร็จสมบูรณ์";
                 item.OutputPath = outputFilePath;
-                return true;
+                return MediaOperationResult.Completed(outputFilePath);
             }
 
             item.Status = TaskState.Failed;
             item.StatusMessage = !string.IsNullOrWhiteSpace(error) 
                 ? $"แปลงไฟล์ไม่สำเร็จ: {error}" 
                 : "การแปลงไฟล์ล้มเหลว";
-            return false;
+            TryDeleteOutput(outputFilePath);
+            return MediaOperationResult.Failed(item.StatusMessage);
         }
         catch (OperationCanceledException)
         {
+            TryDeleteOutput(outputFilePath);
             item.Status = TaskState.Cancelled;
             item.StatusMessage = "ยกเลิกการแปลงไฟล์";
-            return false;
+            return MediaOperationResult.Failed(item.StatusMessage);
         }
         catch (Exception ex)
         {
+            TryDeleteOutput(outputFilePath);
             item.Status = TaskState.Failed;
             item.StatusMessage = $"เกิดข้อผิดพลาด: {ex.Message}";
-            return false;
+            return MediaOperationResult.Failed(item.StatusMessage);
         }
     }
 
@@ -231,22 +235,19 @@ public class FFmpegService
         return (exitCode == 0, lastError);
     }
 
-    public async Task<bool> LosslessTrimAsync(string inputFilePath, TimeSpan start, TimeSpan end, string outputFolder, bool extractAudioOnly, CancellationToken ct = default)
+    public async Task<MediaOperationResult> LosslessTrimAsync(string inputFilePath, TimeSpan start, TimeSpan end, string outputFolder, CancellationToken ct = default)
     {
-        if (!File.Exists(_dependencyService.FFmpegPath) || !File.Exists(inputFilePath)) return false;
+        if (!File.Exists(_dependencyService.FFmpegPath) || !File.Exists(inputFilePath))
+            return MediaOperationResult.Failed("ไม่พบไฟล์ต้นทางหรือเอนจิน FFmpeg");
 
+        string? outputFilePath = null;
         try
         {
             Directory.CreateDirectory(outputFolder);
 
             var baseName = Path.GetFileNameWithoutExtension(inputFilePath);
-            var ext = extractAudioOnly ? "mp3" : Path.GetExtension(inputFilePath).TrimStart('.');
-            var outputFilePath = Path.Combine(outputFolder, $"{baseName}_trimmed.{ext}");
-
-            if (string.Equals(Path.GetFullPath(inputFilePath), Path.GetFullPath(outputFilePath), StringComparison.OrdinalIgnoreCase))
-            {
-                outputFilePath = Path.Combine(outputFolder, $"{baseName}_trimmed_{DateTime.Now:yyyyMMddHHmmss}.{ext}");
-            }
+            var ext = Path.GetExtension(inputFilePath).TrimStart('.');
+            outputFilePath = ReserveOutputPath(outputFolder, $"{baseName}_trimmed", ext);
 
             var startStr = start.ToString(@"hh\:mm\:ss\.fff", CultureInfo.InvariantCulture);
             var duration = end - start;
@@ -260,15 +261,7 @@ public class FFmpegService
                 "-i", inputFilePath
             };
 
-            if (extractAudioOnly)
-            {
-                args.AddRange(new[] { "-vn", "-c:a", "libmp3lame", "-q:a", "2" });
-            }
-            else
-            {
-                // Lossless instant cut (no re-encoding) with timestamp alignment
-                args.AddRange(new[] { "-c", "copy", "-avoid_negative_ts", "make_zero" });
-            }
+            args.AddRange(new[] { "-c", "copy", "-avoid_negative_ts", "make_zero" });
 
             args.Add(outputFilePath);
 
@@ -277,11 +270,114 @@ public class FFmpegService
                 .WithValidation(CommandResultValidation.None)
                 .ExecuteAsync(ct);
 
-            return result.ExitCode == 0 && File.Exists(outputFilePath);
+            if (result.ExitCode == 0 && new FileInfo(outputFilePath).Length > 0)
+                return MediaOperationResult.Completed(outputFilePath);
+            TryDeleteOutput(outputFilePath);
+            return MediaOperationResult.Failed("FFmpeg ไม่สามารถตัดไฟล์นี้ได้");
         }
-        catch
+        catch (OperationCanceledException)
         {
-            return false;
+            TryDeleteOutput(outputFilePath);
+            return MediaOperationResult.Failed("ยกเลิกการตัดไฟล์");
         }
+        catch (Exception ex)
+        {
+            TryDeleteOutput(outputFilePath);
+            return MediaOperationResult.Failed(ex.Message);
+        }
+    }
+
+    public async Task<AudioWaveformResult> AnalyzeAudioAsync(string inputFilePath, int peakCount = 900, CancellationToken ct = default)
+    {
+        if (!File.Exists(_dependencyService.FFmpegPath) || !File.Exists(inputFilePath))
+            return new AudioWaveformResult { ErrorMessage = "ไม่พบไฟล์ต้นทางหรือเอนจิน FFmpeg" };
+
+        var tempPath = Path.Combine(Path.GetTempPath(), $"mediastudio-waveform-{Guid.NewGuid():N}.pcm");
+        var previewPath = Path.Combine(Path.GetTempPath(), $"mediastudio-preview-{Guid.NewGuid():N}.mp3");
+        try
+        {
+            var result = await Cli.Wrap(_dependencyService.FFmpegPath)
+                .WithArguments(new[] { "-y", "-i", inputFilePath,
+                    "-map", "0:a:0", "-ac", "1", "-ar", "8000", "-f", "s16le", tempPath,
+                    "-map", "0:a:0", "-vn", "-c:a", "libmp3lame", "-q:a", "5", previewPath })
+                .WithValidation(CommandResultValidation.None)
+                .ExecuteAsync(ct);
+            if (result.ExitCode != 0 || !File.Exists(tempPath) || new FileInfo(tempPath).Length < 2 || !File.Exists(previewPath))
+            {
+                if (File.Exists(previewPath)) File.Delete(previewPath);
+                return new AudioWaveformResult { ErrorMessage = "ไฟล์นี้ไม่มีแทร็กเสียงที่รองรับ" };
+            }
+
+            var duration = await GetDurationAsync(inputFilePath, ct);
+            var totalSamples = new FileInfo(tempPath).Length / 2;
+            var samplesPerPeak = Math.Max(1L, totalSamples / Math.Max(1, peakCount));
+            var peaks = new List<double>(peakCount);
+            await using var stream = new FileStream(tempPath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, true);
+            var buffer = new byte[65536];
+            long inBucket = 0;
+            var maximum = 0;
+            int read;
+            while ((read = await stream.ReadAsync(buffer, ct)) > 0)
+            {
+                for (var i = 0; i + 1 < read; i += 2)
+                {
+                    var value = Math.Abs((int)BitConverter.ToInt16(buffer, i));
+                    if (value > maximum) maximum = value;
+                    inBucket++;
+                    if (inBucket < samplesPerPeak) continue;
+                    peaks.Add(maximum / 32768d);
+                    inBucket = 0;
+                    maximum = 0;
+                }
+            }
+            if (inBucket > 0) peaks.Add(maximum / 32768d);
+            return new AudioWaveformResult { Success = true, Duration = duration, Peaks = peaks, PreviewPath = previewPath };
+        }
+        catch (OperationCanceledException) { if (File.Exists(previewPath)) File.Delete(previewPath); throw; }
+        catch (Exception ex) { if (File.Exists(previewPath)) File.Delete(previewPath); return new AudioWaveformResult { ErrorMessage = ex.Message }; }
+        finally { if (File.Exists(tempPath)) File.Delete(tempPath); }
+    }
+
+    public async Task<MediaOperationResult> TrimAudioAsync(string inputFilePath, TimeSpan start, TimeSpan end, string outputFolder, string outputFormat, CancellationToken ct = default)
+    {
+        if (!File.Exists(_dependencyService.FFmpegPath) || !File.Exists(inputFilePath))
+            return MediaOperationResult.Failed("ไม่พบไฟล์ต้นทางหรือเอนจิน FFmpeg");
+        if (end <= start) return MediaOperationResult.Failed("เวลาสิ้นสุดต้องมากกว่าเวลาเริ่มต้น");
+
+        Directory.CreateDirectory(outputFolder);
+        var ext = outputFormat.ToLowerInvariant();
+        if (ext is not ("mp3" or "wav" or "flac")) ext = "mp3";
+        var outputPath = ReserveOutputPath(outputFolder, $"{Path.GetFileNameWithoutExtension(inputFilePath)}_audio_trimmed", ext);
+        try
+        {
+            var codecArgs = ext switch
+            {
+                "wav" => new[] { "-c:a", "pcm_s16le" },
+                "flac" => new[] { "-c:a", "flac" },
+                _ => new[] { "-c:a", "libmp3lame", "-q:a", "2" }
+            };
+            var args = new List<string>
+            {
+                "-y", "-ss", start.ToString(@"hh\:mm\:ss\.fff", CultureInfo.InvariantCulture),
+                "-t", (end - start).ToString(@"hh\:mm\:ss\.fff", CultureInfo.InvariantCulture),
+                "-i", inputFilePath, "-map", "0:a:0", "-vn"
+            };
+            args.AddRange(codecArgs);
+            args.Add(outputPath);
+            var result = await Cli.Wrap(_dependencyService.FFmpegPath).WithArguments(args)
+                .WithValidation(CommandResultValidation.None).ExecuteAsync(ct);
+            if (result.ExitCode == 0 && new FileInfo(outputPath).Length > 0)
+                return MediaOperationResult.Completed(outputPath);
+            TryDeleteOutput(outputPath);
+            return MediaOperationResult.Failed("ไม่สามารถตัดเสียงจากไฟล์นี้ได้");
+        }
+        catch (OperationCanceledException) { TryDeleteOutput(outputPath); return MediaOperationResult.Failed("ยกเลิกการตัดเสียง"); }
+        catch (Exception ex) { TryDeleteOutput(outputPath); return MediaOperationResult.Failed(ex.Message); }
+    }
+
+    private static void TryDeleteOutput(string? path)
+    {
+        try { if (!string.IsNullOrEmpty(path) && File.Exists(path)) File.Delete(path); }
+        catch { }
     }
 }

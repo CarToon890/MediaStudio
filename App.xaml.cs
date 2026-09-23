@@ -21,6 +21,7 @@ public partial class App : Application
         serviceCollection.AddSingleton<DependencyService>();
         serviceCollection.AddSingleton<YtDlpService>();
         serviceCollection.AddSingleton<FFmpegService>();
+        serviceCollection.AddSingleton<MediaWorkspace>();
 
         // Register ViewModels
         serviceCollection.AddSingleton<MainViewModel>();
@@ -28,6 +29,9 @@ public partial class App : Application
         serviceCollection.AddSingleton<ConverterViewModel>();
         serviceCollection.AddSingleton<TrimmerViewModel>();
         serviceCollection.AddSingleton<SettingsViewModel>();
+        serviceCollection.AddSingleton<AudioTrimmerViewModel>();
+        serviceCollection.AddSingleton<WorkspaceViewModel>();
+        serviceCollection.AddSingleton<HomeViewModel>();
 
         // Register MainWindow
         serviceCollection.AddSingleton<MainWindow>();

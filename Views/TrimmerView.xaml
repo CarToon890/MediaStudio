@@ -17,8 +17,8 @@
 
         <!-- Header -->
         <StackPanel Grid.Row="0" Margin="0,0,0,20">
-            <ui:TextBlock Text="Lossless Video Trimmer" FontTypography="Title" />
-            <ui:TextBlock Text="ตัดต่อคลิปวิดีโอแบบทันใจใน 1 วินาที โดยไม่เสียคุณภาพต้นฉบับและไม่ต้องรอเรนเดอร์ใหม่" 
+            <ui:TextBlock Text="ตัดวิดีโอแบบไม่เข้ารหัสใหม่" FontTypography="Title" />
+            <ui:TextBlock Text="เลือกช่วงและตัดวิดีโอแบบไม่เข้ารหัสใหม่ ระยะเวลาขึ้นอยู่กับขนาดไฟล์"
                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,4,0,0" />
         </StackPanel>
 
@@ -100,7 +100,8 @@
                                                    Visibility="{Binding IsPlaying, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
                                     <ui:SymbolIcon Symbol="Pause24" Margin="0,0,4,0" 
                                                    Visibility="{Binding IsPlaying, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                    <ui:TextBlock Text="{Binding IsPlaying, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=invert, FallbackValue='เล่น/หยุด'}" />
+                                    <ui:TextBlock Text="เล่น" Visibility="{Binding IsPlaying, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+                                    <ui:TextBlock Text="หยุดชั่วคราว" Visibility="{Binding IsPlaying, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                 </StackPanel>
                             </ui:Button>
 
@@ -118,12 +119,12 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
 
-                            <ui:Button Grid.Column="0" Content="📍 ตั้งเป็นจุดเริ่มต้น (Start)" 
+                            <ui:Button Grid.Column="0" Content="ตั้งเป็นจุดเริ่มต้น (Start)"
                                        Command="{Binding SetStartToCurrentCommand}" 
                                        IsEnabled="{Binding HasLoadedFile}" 
                                        HorizontalAlignment="Stretch" Margin="0,0,4,0" />
 
-                            <ui:Button Grid.Column="1" Content="🏁 ตั้งเป็นจุดสิ้นสุด (End)" 
+                            <ui:Button Grid.Column="1" Content="ตั้งเป็นจุดสิ้นสุด (End)"
                                        Command="{Binding SetEndToCurrentCommand}" 
                                        IsEnabled="{Binding HasLoadedFile}" 
                                        HorizontalAlignment="Stretch" Margin="4,0,0,0" />
@@ -207,12 +208,8 @@
                     </StackPanel>
 
                     <!-- Options -->
-                    <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,0,0,16">
-                        <CheckBox Content="ดึงเฉพาะเสียง (Extract Audio as MP3)" 
-                                  IsChecked="{Binding ExtractAudioOnly}" IsEnabled="{Binding HasLoadedFile}" Margin="0,0,16,0" />
-                        <ui:TextBlock Text="⚡ โหมด Lossless Cut (ตัดทันใจใน 1 วินาที)" 
-                                      Foreground="{DynamicResource SystemAccentColorLight2Brush}" FontWeight="SemiBold" VerticalAlignment="Center" />
-                    </StackPanel>
+                    <ui:TextBlock Grid.Row="3" Text="โหมด Lossless Cut: รักษาคุณภาพเดิมโดยไม่เข้ารหัสวิดีโอใหม่"
+                                  Foreground="{DynamicResource SystemAccentColorLight2Brush}" FontWeight="SemiBold" Margin="0,0,0,16" />
 
                     <!-- Status Text -->
                     <ui:TextBlock Grid.Row="4" Text="{Binding StatusText}" VerticalAlignment="Center" 
@@ -226,10 +223,11 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
 
-                        <ui:Button Grid.Column="0" Content="เปิดดูคลิปที่เพิ่งตัด" Appearance="Primary" Icon="{ui:SymbolIcon Symbol=Play24}" 
-                                   Command="{Binding PlayLastTrimmedCommand}" 
-                                   Visibility="{Binding HasLastTrimmedPath, Converter={StaticResource BooleanToVisibilityConverter}}" 
-                                   HorizontalAlignment="Left" Margin="0,0,8,0" />
+                        <StackPanel Grid.Column="0" Orientation="Horizontal">
+                            <ui:Button Content="เปิดผลลัพธ์" Appearance="Primary" Icon="{ui:SymbolIcon Symbol=Play24}" Command="{Binding PlayLastTrimmedCommand}" Visibility="{Binding HasLastTrimmedPath, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,0,6,0"/>
+                            <ui:Button Content="ส่งไปแปลง" Command="{Binding SendToConverterCommand}" Visibility="{Binding HasLastTrimmedPath, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,0,6,0"/>
+                            <ui:Button Content="ส่งไปตัดเสียง" Command="{Binding SendToAudioTrimmerCommand}" Visibility="{Binding HasLastTrimmedPath, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,0,6,0"/>
+                        </StackPanel>
 
                         <ui:Button Grid.Column="1" Content="เปิดโฟลเดอร์" Icon="{ui:SymbolIcon Symbol=FolderOpen24}" 
                                    Command="{Binding OpenLastTrimmedFolderCommand}" Margin="0,0,8,0" 

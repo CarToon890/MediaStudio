@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using MediaStudio.Models;
 using MediaStudio.Services;
 using Microsoft.Win32;
 
@@ -15,6 +16,7 @@ public class TrimmerViewModel : ObservableObject
     private readonly FFmpegService _ffmpegService;
     private readonly SettingsService _settingsService;
     private readonly DependencyService _dependencyService;
+    private readonly MediaWorkspace _workspace;
 
     private string _sourceFilePath = string.Empty;
     public string SourceFilePath 
@@ -90,9 +92,6 @@ public class TrimmerViewModel : ObservableObject
         }
     }
 
-    private bool _extractAudioOnly;
-    public bool ExtractAudioOnly { get => _extractAudioOnly; set => SetProperty(ref _extractAudioOnly, value); }
-
     private bool _isTrimming;
     public bool IsTrimming { get => _isTrimming; set => SetProperty(ref _isTrimming, value); }
 
@@ -130,12 +129,15 @@ public class TrimmerViewModel : ObservableObject
     public IRelayCommand SetEndToCurrentCommand { get; }
     public IRelayCommand SeekToStartCommand { get; }
     public IRelayCommand SeekToEndCommand { get; }
+    public IRelayCommand SendToConverterCommand { get; }
+    public IRelayCommand SendToAudioTrimmerCommand { get; }
 
-    public TrimmerViewModel(FFmpegService ffmpegService, SettingsService settingsService, DependencyService dependencyService)
+    public TrimmerViewModel(FFmpegService ffmpegService, SettingsService settingsService, DependencyService dependencyService, MediaWorkspace workspace)
     {
         _ffmpegService = ffmpegService;
         _settingsService = settingsService;
         _dependencyService = dependencyService;
+        _workspace = workspace;
 
         SelectFileCommand = new AsyncRelayCommand(SelectFileAsync);
         StartTrimCommand = new AsyncRelayCommand(StartTrimAsync);
@@ -146,6 +148,8 @@ public class TrimmerViewModel : ObservableObject
         SetEndToCurrentCommand = new RelayCommand(() => EndSeconds = Math.Max(StartSeconds + 0.1, CurrentPositionSeconds));
         SeekToStartCommand = new RelayCommand(() => RequestSeek?.Invoke(TimeSpan.FromSeconds(StartSeconds)));
         SeekToEndCommand = new RelayCommand(() => RequestSeek?.Invoke(TimeSpan.FromSeconds(EndSeconds)));
+        SendToConverterCommand = new RelayCommand(() => Send(ToolDestination.Converter));
+        SendToAudioTrimmerCommand = new RelayCommand(() => Send(ToolDestination.AudioTrimmer));
     }
 
     private async Task SelectFileAsync()
@@ -166,6 +170,7 @@ public class TrimmerViewModel : ObservableObject
         if (!File.Exists(filePath)) return;
 
         SourceFilePath = filePath;
+        _workspace.Register(filePath, "ไฟล์นำเข้า");
         FileName = Path.GetFileName(filePath);
         StatusText = "กำลังอ่านข้อมูลความยาววิดีโอ...";
 
@@ -203,20 +208,26 @@ public class TrimmerViewModel : ObservableObject
         var start = TimeSpan.FromSeconds(StartSeconds);
         var end = TimeSpan.FromSeconds(EndSeconds);
 
-        var success = await _ffmpegService.LosslessTrimAsync(SourceFilePath, start, end, outputFolder, ExtractAudioOnly);
+        var result = await _ffmpegService.LosslessTrimAsync(SourceFilePath, start, end, outputFolder);
 
         IsTrimming = false;
-        if (success)
+        if (result.Success)
         {
-            StatusText = "ตัดคลิปเสร็จสมบูรณ์ทันใจใน 1 วินาที!";
-            var baseName = Path.GetFileNameWithoutExtension(SourceFilePath);
-            var ext = ExtractAudioOnly ? "mp3" : Path.GetExtension(SourceFilePath).TrimStart('.');
-            LastTrimmedPath = Path.Combine(outputFolder, $"{baseName}_trimmed.{ext}");
+            StatusText = "ตัดวิดีโอเสร็จสมบูรณ์";
+            LastTrimmedPath = result.OutputPath;
+            _workspace.Register(result.OutputPath, "Video Trimmer", (end - start).TotalSeconds);
         }
         else
         {
-            StatusText = "เกิดข้อผิดพลาดในการตัดคลิป";
+            StatusText = $"ตัดวิดีโอไม่สำเร็จ: {result.ErrorMessage}";
         }
+    }
+
+    private void Send(ToolDestination destination)
+    {
+        if (!File.Exists(LastTrimmedPath)) return;
+        var asset = _workspace.Register(LastTrimmedPath, "Video Trimmer");
+        _workspace.RequestTransfer(asset, destination);
     }
 
     private void PlayLastTrimmed()

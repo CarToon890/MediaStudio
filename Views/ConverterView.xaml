@@ -18,7 +18,7 @@
 
         <!-- Header -->
         <StackPanel Grid.Row="0" Margin="0,0,0,20">
-            <ui:TextBlock Text="Media Converter &amp; Compressor" FontTypography="Title" />
+            <ui:TextBlock Text="แปลงและบีบอัดไฟล์" FontTypography="Title" />
             <ui:TextBlock Text="แปลงฟอร์แมตวิดีโอ/เพลง (MP4, MP3, GIF, WAV) และบีบอัดลดขนาดไฟล์สำหรับ Discord/LINE" 
                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,4,0,0" />
         </StackPanel>
@@ -151,6 +151,14 @@
                                         <ui:Button Icon="{ui:SymbolIcon Symbol=FolderOpen24}" ToolTip="เปิดโฟลเดอร์" 
                                                    Command="{Binding DataContext.OpenOutputFolderCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" 
                                                    CommandParameter="{Binding}" Margin="0,0,4,0" />
+                                        <ui:Button Content="ตัดวิดีโอ" ToolTip="ส่งผลลัพธ์ไปตัดวิดีโอ"
+                                                   Command="{Binding DataContext.SendToVideoTrimmerCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                   CommandParameter="{Binding}" IsEnabled="{Binding CanOpenOutputInVideoTrimmer}" Margin="0,0,4,0"
+                                                   Visibility="{Binding IsCompleted, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                        <ui:Button Content="ตัดเสียง" ToolTip="ส่งผลลัพธ์ไปตัดเสียง"
+                                                   Command="{Binding DataContext.SendToAudioTrimmerCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                   CommandParameter="{Binding}" IsEnabled="{Binding CanOpenOutputInAudioTrimmer}" Margin="0,0,4,0"
+                                                   Visibility="{Binding IsCompleted, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                         <ui:Button Icon="{ui:SymbolIcon Symbol=Dismiss24}" ToolTip="ลบออกจากคิว" 
                                                    Command="{Binding DataContext.RemoveItemCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" 
                                                    CommandParameter="{Binding}" />

@@ -6,11 +6,16 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <Version>1.1.0</Version>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
+    <ApplicationIcon>Assets\MediaStudio.ico</ApplicationIcon>
     <IncludePackageReferencesDuringMarkupCompilation>false</IncludePackageReferencesDuringMarkupCompilation>
     <NoWarn>$(NoWarn);CS9057</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
+    <Resource Include="Assets\MediaStudio.png" />
     <Compile Remove="Tests\**\*.cs" />
     <PackageReference Include="CliWrap" Version="3.10.5" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />

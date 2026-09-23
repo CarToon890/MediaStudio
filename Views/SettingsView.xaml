@@ -16,7 +16,7 @@
 
         <!-- Header -->
         <StackPanel Grid.Row="0" Margin="0,0,0,24">
-            <ui:TextBlock Text="Settings &amp; Preferences" FontTypography="Title" />
+            <ui:TextBlock Text="การตั้งค่า" FontTypography="Title" />
             <ui:TextBlock Text="ตั้งค่าโฟลเดอร์บันทึกไฟล์ การเร่งความเร็วด้วยการ์ดจอ และเอนจินประมวลผล" 
                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,4,0,0" />
         </StackPanel>
@@ -105,7 +105,7 @@
                         CornerRadius="8" Padding="20" BorderThickness="1" 
                         BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
                     <StackPanel>
-                        <ui:TextBlock Text="MediaStudio v1.0.0" FontWeight="SemiBold" />
+                    <ui:TextBlock Text="{Binding AppVersion}" FontWeight="SemiBold" />
                         <ui:TextBlock Text="พัฒนาด้วย .NET 9.0, C#, WPF-UI Fluent Design, yt-dlp และ FFmpeg" 
                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />
                     </StackPanel>

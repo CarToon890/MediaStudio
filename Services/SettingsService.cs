@@ -10,6 +10,8 @@ public class AppSettings
     public bool EnableHardwareAcceleration { get; set; } = true;
     public string PreferredVideoQuality { get; set; } = "1080p";
     public string PreferredAudioFormat { get; set; } = "MP3";
+    public bool HasCompletedOnboarding { get; set; }
+    public string LastVisitedTab { get; set; } = "Home";
 }
 
 public class SettingsService

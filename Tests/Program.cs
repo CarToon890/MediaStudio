@@ -37,13 +37,13 @@ try
     var existing = Path.Combine(output, "clip_converted.mp4");
     await File.WriteAllTextAsync(existing, "existing result");
     var first = Item(source);
-    Check(await ffmpeg.ConvertAsync(first, output, false), first.StatusMessage);
+    Check((await ffmpeg.ConvertAsync(first, output, false)).Success, first.StatusMessage);
     var firstBytes = await File.ReadAllBytesAsync(first.OutputPath);
     var otherFolder = Directory.CreateDirectory(Path.Combine(root, "other")).FullName;
     var otherSource = Path.Combine(otherFolder, "clip.mp4");
     File.Copy(source, otherSource);
     var second = Item(otherSource);
-    Check(await ffmpeg.ConvertAsync(second, output, false), second.StatusMessage);
+    Check((await ffmpeg.ConvertAsync(second, output, false)).Success, second.StatusMessage);
     Check(first.OutputPath != second.OutputPath, "Same-name inputs must have distinct outputs");
     Check(await File.ReadAllTextAsync(existing) == "existing result", "Existing output changed");
     Check(firstBytes.SequenceEqual(await File.ReadAllBytesAsync(first.OutputPath)), "First result overwritten");
@@ -54,7 +54,7 @@ try
         var item = Item(source, format);
         item.CompressVideo = true;
         item.TargetSizeMb = 5;
-        Check(await ffmpeg.ConvertAsync(item, output, false), format + ": " + item.StatusMessage);
+        Check((await ffmpeg.ConvertAsync(item, output, false)).Success, format + ": " + item.StatusMessage);
         Check(new FileInfo(item.OutputPath).Length > 0, "Empty " + format);
     }
     Console.WriteLine("PASS: all six target formats with compression requested");
@@ -63,7 +63,9 @@ try
     var settings = (SettingsService)RuntimeHelpers.GetUninitializedObject(typeof(SettingsService));
     typeof(SettingsService).GetField("<Settings>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!
         .SetValue(settings, new AppSettings { DownloadDirectory = output, EnableHardwareAcceleration = false });
-    var vm = new ConverterViewModel(ffmpeg, settings, dependency);
+    var workspacePath = Path.Combine(root, "workspace", "history.json");
+    var workspace = new MediaWorkspace(workspacePath);
+    var vm = new ConverterViewModel(ffmpeg, settings, dependency, workspace);
     vm.IsCompressEnabled = true;
     vm.SelectedTargetFormat = "MP3";
     Check(!vm.CanCompressVideo && !vm.IsCompressEnabled, "Unsupported compression toggle not cleared");
@@ -101,6 +103,50 @@ try
     await vm.StartConversionCommand.ExecuteAsync(null);
     Check(!vm.IsConverting && cancelled.Status == TaskState.Cancelled, "Cancellation did not settle");
     Console.WriteLine("PASS: cancellation resets batch state");
+
+    Check(FileNameService.TryNormalizeBaseName("เพลงทดสอบ", out var thaiName, out _) && thaiName == "เพลงทดสอบ", "Thai file name rejected");
+    Check(!FileNameService.TryNormalizeBaseName("   ", out _, out _), "Blank file name accepted");
+    Check(!FileNameService.TryNormalizeBaseName("CON", out _, out _), "Reserved Windows name accepted");
+    Check(!FileNameService.TryNormalizeBaseName("CON.txt", out _, out _), "Reserved Windows name with suffix accepted");
+    Check(!FileNameService.TryNormalizeBaseName("bad:name", out _, out _), "Invalid Windows character accepted");
+    Check(!FileNameService.TryNormalizeBaseName(new string('a', 181), out _, out _), "Overlong file name accepted");
+    await File.WriteAllTextAsync(Path.Combine(output, "เพลงทดสอบ.mp3"), "existing");
+    Check(FileNameService.MakeUniqueBaseName(output, "เพลงทดสอบ", "mp3") == "เพลงทดสอบ (1)", "Duplicate name not suffixed");
+    Console.WriteLine("PASS: output file-name validation and collision handling");
+
+    var waveform = await ffmpeg.AnalyzeAudioAsync(source, 120);
+    Check(waveform.Success && waveform.Peaks.Count > 10 && waveform.Duration.TotalSeconds > 0, "Waveform analysis failed");
+    Check(File.Exists(waveform.PreviewPath), "Audio preview was not generated");
+    File.Delete(waveform.PreviewPath);
+    var noAudioSource = Path.Combine(root, "no-audio.mp4");
+    var noAudioStart = new ProcessStartInfo(ffmpegPath) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true };
+    foreach (var arg in new[] { "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=64x64:rate=10", "-t", "0.3", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", noAudioSource }) noAudioStart.ArgumentList.Add(arg);
+    using (var process = Process.Start(noAudioStart)!)
+    {
+        var error = await process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        Check(process.ExitCode == 0, "Generate no-audio media: " + error);
+    }
+    Check(!(await ffmpeg.AnalyzeAudioAsync(noAudioSource, 50)).Success, "Video without audio was accepted by Audio Trimmer");
+    foreach (var format in new[] { "MP3", "WAV", "FLAC" })
+    {
+        var trim = await ffmpeg.TrimAudioAsync(source, TimeSpan.FromSeconds(.1), TimeSpan.FromSeconds(.8), output, format);
+        Check(trim.Success && File.Exists(trim.OutputPath) && new FileInfo(trim.OutputPath).Length > 0, "Audio trim failed: " + format);
+        workspace.Register(trim.OutputPath, "Audio Trimmer", .7);
+    }
+    var reloadedWorkspace = new MediaWorkspace(workspacePath);
+    Check(reloadedWorkspace.Assets.Count == workspace.Assets.Count && reloadedWorkspace.Assets.Count(x => x.Kind == MediaKind.Audio) == 3,
+        $"Workspace persistence failed: count={reloadedWorkspace.Assets.Count}, kinds={string.Join(',', reloadedWorkspace.Assets.Select(x => x.Kind))}");
+    var routed = false;
+    reloadedWorkspace.TransferRequested += (_, target) => routed = target == ToolDestination.Converter;
+    reloadedWorkspace.RequestTransfer(reloadedWorkspace.Assets[0], ToolDestination.Converter);
+    Check(routed, "Workspace transfer request failed");
+    var missingPath = Path.Combine(root, "missing.mp3");
+    await File.WriteAllTextAsync(missingPath, "temporary");
+    workspace.Register(missingPath, "ไฟล์นำเข้า");
+    File.Delete(missingPath);
+    Check(!new MediaWorkspace(workspacePath).Assets.Any(x => x.FilePath == missingPath), "Missing workspace file was not removed on reload");
+    Console.WriteLine("PASS: waveform, audio trimming, workspace persistence and routing");
 
     var handler = new DownloadHandler();
     using var client = new HttpClient(handler);

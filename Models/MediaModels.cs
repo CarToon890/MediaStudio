@@ -14,6 +14,61 @@ public enum TaskState
     Cancelled
 }
 
+public enum MediaKind
+{
+    Video,
+    Audio,
+    Image,
+    Other
+}
+
+public enum ToolDestination
+{
+    Converter,
+    VideoTrimmer,
+    AudioTrimmer
+}
+
+public sealed class MediaOperationResult
+{
+    public bool Success { get; init; }
+    public string OutputPath { get; init; } = string.Empty;
+    public string ErrorMessage { get; init; } = string.Empty;
+
+    public static MediaOperationResult Completed(string path) => new() { Success = true, OutputPath = path };
+    public static MediaOperationResult Failed(string message) => new() { ErrorMessage = message };
+}
+
+public sealed class AudioWaveformResult
+{
+    public bool Success { get; init; }
+    public TimeSpan Duration { get; init; }
+    public IReadOnlyList<double> Peaks { get; init; } = Array.Empty<double>();
+    public string PreviewPath { get; init; } = string.Empty;
+    public string ErrorMessage { get; init; } = string.Empty;
+}
+
+public sealed class MediaAsset : ObservableObject
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string FilePath { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public MediaKind Kind { get; set; }
+    public string SourceTool { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public double DurationSeconds { get; set; }
+    public string CreatedAtFormatted => CreatedAt.ToString("dd/MM/yyyy HH:mm");
+    public string KindLabel => Kind switch
+    {
+        MediaKind.Video => "วิดีโอ",
+        MediaKind.Audio => "เสียง",
+        MediaKind.Image => "รูปภาพ",
+        _ => "ไฟล์"
+    };
+    public bool CanOpenInVideoTrimmer => Kind == MediaKind.Video;
+    public bool CanOpenInAudioTrimmer => Kind is MediaKind.Video or MediaKind.Audio;
+}
+
 public class MediaMetadata
 {
     public string Title { get; set; } = string.Empty;
@@ -45,7 +100,14 @@ public class DownloadItem : ObservableObject
     public string Quality { get => _quality; set => SetProperty(ref _quality, value); }
 
     private bool _isAudioOnly;
-    public bool IsAudioOnly { get => _isAudioOnly; set => SetProperty(ref _isAudioOnly, value); }
+    public bool IsAudioOnly
+    {
+        get => _isAudioOnly;
+        set
+        {
+            if (SetProperty(ref _isAudioOnly, value)) OnPropertyChanged(nameof(CanSendToVideoTrimmer));
+        }
+    }
 
     private double _progress;
     public double Progress { get => _progress; set => SetProperty(ref _progress, value); }
@@ -66,18 +128,23 @@ public class DownloadItem : ObservableObject
             {
                 OnPropertyChanged(nameof(IsRunning));
                 OnPropertyChanged(nameof(IsCompleted));
+                OnPropertyChanged(nameof(CanSendToVideoTrimmer));
             }
         }
     }
 
     public bool IsRunning => Status == TaskState.Downloading || Status == TaskState.FetchingInfo;
     public bool IsCompleted => Status == TaskState.Completed;
+    public bool CanSendToVideoTrimmer => IsCompleted && !IsAudioOnly;
 
     private string _statusMessage = "รอในคิว...";
     public string StatusMessage { get => _statusMessage; set => SetProperty(ref _statusMessage, value); }
 
     private string _outputPath = string.Empty;
     public string OutputPath { get => _outputPath; set => SetProperty(ref _outputPath, value); }
+
+    private string _requestedFileName = string.Empty;
+    public string RequestedFileName { get => _requestedFileName; set => SetProperty(ref _requestedFileName, value); }
 
     public System.Threading.CancellationTokenSource? Cts { get; set; }
 }
@@ -97,7 +164,20 @@ public class ConversionItem : ObservableObject
     public string FileSizeFormatted { get => _fileSizeFormatted; set => SetProperty(ref _fileSizeFormatted, value); }
 
     private string _targetFormat = "MP4";
-    public string TargetFormat { get => _targetFormat; set => SetProperty(ref _targetFormat, value); }
+    public string TargetFormat
+    {
+        get => _targetFormat;
+        set
+        {
+            if (SetProperty(ref _targetFormat, value))
+            {
+                OnPropertyChanged(nameof(CanOpenOutputInVideoTrimmer));
+                OnPropertyChanged(nameof(CanOpenOutputInAudioTrimmer));
+            }
+        }
+    }
+    public bool CanOpenOutputInVideoTrimmer => TargetFormat is "MP4" or "MKV";
+    public bool CanOpenOutputInAudioTrimmer => TargetFormat is "MP4" or "MKV" or "MP3" or "WAV" or "FLAC";
 
     private bool _compressVideo;
     public bool CompressVideo { get => _compressVideo; set => SetProperty(ref _compressVideo, value); }

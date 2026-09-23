@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
+using System.Reflection;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MediaStudio.Services;
@@ -11,6 +12,7 @@ namespace MediaStudio.ViewModels;
 
 public class SettingsViewModel : ObservableObject
 {
+    public string AppVersion => $"MediaStudio v{Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.1.0"}";
     private readonly SettingsService _settingsService;
     private readonly DependencyService _dependencyService;
 

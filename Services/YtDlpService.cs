@@ -17,6 +17,7 @@ public class YtDlpService
     private static readonly Regex DestinationRegex = new(@"\[(?:Merger|download|ExtractAudio)\]\s+Destination:\s+(.+)", RegexOptions.Compiled);
     private static readonly Regex MergedRegex = new(@"\[Merger\]\s+Merging formats into ""?([^""\r\n]+)""?", RegexOptions.Compiled);
     private static readonly Regex AlreadyDownloadedRegex = new(@"\[download\]\s+(.+?)\s+has already been downloaded", RegexOptions.Compiled);
+    private const string FinalPathPrefix = "__MEDIASTUDIO_FILE__";
 
     public YtDlpService(DependencyService dependencyService)
     {
@@ -70,13 +71,13 @@ public class YtDlpService
         }
     }
 
-    public async Task<bool> DownloadAsync(DownloadItem item, string outputFolder, CancellationToken ct = default)
+    public async Task<MediaOperationResult> DownloadAsync(DownloadItem item, string outputFolder, CancellationToken ct = default)
     {
         if (!File.Exists(_dependencyService.YtDlpPath))
         {
             item.Status = TaskState.Failed;
             item.StatusMessage = "ไม่พบเอนจิน yt-dlp";
-            return false;
+            return MediaOperationResult.Failed(item.StatusMessage);
         }
 
         try
@@ -86,13 +87,19 @@ public class YtDlpService
             item.StatusMessage = "กำลังเริ่มดาวน์โหลด...";
             item.Progress = 0;
 
-            var outputTemplate = Path.Combine(outputFolder, "%(title)s.%(ext)s");
+            var requestedName = FileNameService.SanitizeSuggestedName(item.RequestedFileName);
+            requestedName = FileNameService.MakeUniqueBaseName(outputFolder, requestedName, item.IsAudioOnly ? "mp3" : "mp4");
+            item.RequestedFileName = requestedName;
+            var outputTemplate = Path.Combine(outputFolder, requestedName + ".%(ext)s");
 
             var arguments = new System.Collections.Generic.List<string>
             {
                 "--newline",
                 "--no-playlist",
                 "--progress",
+                "--no-overwrites",
+                "--no-simulate",
+                "--print", $"after_move:{FinalPathPrefix}%(filepath)s",
                 "-o", outputTemplate
             };
 
@@ -144,6 +151,11 @@ public class YtDlpService
                 {
                     var line = stdOut.Text;
 
+                    if (line.StartsWith(FinalPathPrefix, StringComparison.Ordinal))
+                    {
+                        finalDestination = line[FinalPathPrefix.Length..].Trim();
+                    }
+
                     var match = ProgressRegex.Match(line);
                     if (match.Success)
                     {
@@ -194,27 +206,48 @@ public class YtDlpService
                 item.StatusMessage = !string.IsNullOrWhiteSpace(lastError) 
                     ? $"ดาวน์โหลดไม่สำเร็จ: {lastError}" 
                     : $"ดาวน์โหลดไม่สำเร็จ (รหัสข้อผิดพลาด {exitCode})";
-                return false;
+                return MediaOperationResult.Failed(item.StatusMessage);
             }
 
             item.Progress = 100;
             item.Status = TaskState.Completed;
             item.StatusMessage = "ดาวน์โหลดเสร็จสมบูรณ์";
-            item.OutputPath = finalDestination ?? outputFolder;
-
-            return true;
+            item.OutputPath = ResolveOutputPath(finalDestination, outputFolder, requestedName, item.IsAudioOnly ? "mp3" : "mp4");
+            if (!File.Exists(item.OutputPath))
+            {
+                item.Status = TaskState.Failed;
+                item.StatusMessage = "ดาวน์โหลดเสร็จแต่ไม่พบไฟล์ผลลัพธ์";
+                return MediaOperationResult.Failed(item.StatusMessage);
+            }
+            return MediaOperationResult.Completed(item.OutputPath);
         }
         catch (OperationCanceledException)
         {
             item.Status = TaskState.Cancelled;
             item.StatusMessage = "ยกเลิกการดาวน์โหลด";
-            return false;
+            return MediaOperationResult.Failed(item.StatusMessage);
         }
         catch (Exception ex)
         {
             item.Status = TaskState.Failed;
             item.StatusMessage = $"เกิดข้อผิดพลาด: {ex.Message}";
-            return false;
+            return MediaOperationResult.Failed(item.StatusMessage);
         }
+    }
+
+    private static string ResolveOutputPath(string? reportedPath, string outputFolder, string requestedName, string expectedExtension)
+    {
+        if (!string.IsNullOrWhiteSpace(reportedPath))
+        {
+            var cleaned = reportedPath.Trim().Trim('"');
+            if (!Path.IsPathRooted(cleaned)) cleaned = Path.Combine(outputFolder, cleaned);
+            if (File.Exists(cleaned)) return Path.GetFullPath(cleaned);
+        }
+
+        var exact = Path.Combine(outputFolder, $"{requestedName}.{expectedExtension}");
+        if (File.Exists(exact)) return exact;
+        return Directory.EnumerateFiles(outputFolder, requestedName + ".*")
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault() ?? exact;
     }
 }
