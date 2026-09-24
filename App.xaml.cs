@@ -14,6 +14,12 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        if (UpdateBootstrapper.IsUpdateMode(e.Args))
+        {
+            Shutdown(UpdateBootstrapper.ApplyUpdate(e.Args));
+            return;
+        }
+
         var serviceCollection = new ServiceCollection();
 
         // Register Services
@@ -23,6 +29,7 @@ public partial class App : Application
         serviceCollection.AddSingleton<FFmpegService>();
         serviceCollection.AddSingleton<MediaWorkspace>();
         serviceCollection.AddSingleton<IConfirmationService, ConfirmationService>();
+        serviceCollection.AddSingleton<IAppUpdateService, AppUpdateService>();
 
         // Register ViewModels
         serviceCollection.AddSingleton<MainViewModel>();
@@ -41,5 +48,6 @@ public partial class App : Application
 
         var mainWindow = Services.GetRequiredService<MainWindow>();
         mainWindow.Show();
+        UpdateBootstrapper.CompleteNormalStartup(e.Args);
     }
 }

@@ -32,7 +32,17 @@ public sealed class MainViewModel : ObservableObject
     private string _appStatus = "กำลังเตรียม MediaStudio...";
     public string AppStatus { get => _appStatus; set => SetProperty(ref _appStatus, value); }
     private bool _enginesReady;
-    public bool EnginesReady { get => _enginesReady; set => SetProperty(ref _enginesReady, value); }
+    public bool EnginesReady
+    {
+        get => _enginesReady;
+        set
+        {
+            if (!SetProperty(ref _enginesReady, value)) return;
+            OnPropertyChanged(nameof(ShowEngineAction));
+            OnPropertyChanged(nameof(EngineActionLabel));
+            OnPropertyChanged(nameof(EngineToolTip));
+        }
+    }
     private bool _isEngineInitializing;
     public bool IsEngineInitializing { get => _isEngineInitializing; set => SetProperty(ref _isEngineInitializing, value); }
     private double _engineProgress;
@@ -48,15 +58,16 @@ public sealed class MainViewModel : ObservableObject
             OnPropertyChanged(nameof(EngineStatusTitle));
         }
     }
-    public string EngineActionLabel => EnginesReady ? "ตรวจสอบและอัปเดต" : "ติดตั้งเอนจิน";
-    public string EngineToolTip => EnginesReady ? string.Empty : "ติดตั้ง yt-dlp และ FFmpeg จากหน้าเริ่มต้นก่อนใช้งาน";
+    public bool ShowEngineAction => !EnginesReady;
+    public string EngineActionLabel => "ดาวน์โหลดส่วนประกอบที่จำเป็น";
+    public string EngineToolTip => EnginesReady ? string.Empty : "ดาวน์โหลดส่วนประกอบที่จำเป็นจากหน้าเริ่มต้นก่อนใช้งาน";
     public string EngineStatusTitle => EngineState switch
     {
-        EngineUiState.Downloading => "กำลังเตรียมเอนจิน",
-        EngineUiState.Ready => "พร้อมใช้งาน",
-        EngineUiState.Failed => "เตรียมเอนจินไม่สำเร็จ",
-        EngineUiState.Cancelled => "ยังไม่ได้ติดตั้งเอนจิน",
-        _ => "ต้องติดตั้งเอนจินก่อนเริ่มใช้งาน"
+        EngineUiState.Downloading => "กำลังเตรียมระบบ",
+        EngineUiState.Ready => "ระบบพร้อมใช้งาน",
+        EngineUiState.Failed => "เตรียมระบบไม่สำเร็จ",
+        EngineUiState.Cancelled => "ยังไม่ได้ดาวน์โหลดส่วนประกอบ",
+        _ => "ต้องเตรียมระบบก่อนเริ่มใช้งาน"
     };
     public string DownloaderNavTitle => DownloaderVm.ActiveDownloadsCount > 0 ? $"ดาวน์โหลด ({DownloaderVm.ActiveDownloadsCount})" : "ดาวน์โหลด";
     public string ConverterNavTitle => ConverterVm.ActiveConversionsCount > 0 ? $"แปลงไฟล์ ({ConverterVm.ActiveConversionsCount})" : "แปลงไฟล์";
@@ -81,7 +92,9 @@ public sealed class MainViewModel : ObservableObject
         _currentTab = dependencies.IsReady && settings.Settings.HasCompletedOnboarding ? NormalizeTab(settings.Settings.LastVisitedTab) : "Home";
         _enginesReady = dependencies.IsReady;
         _engineState = dependencies.IsReady ? EngineUiState.Ready : EngineUiState.NotInstalled;
-        _appStatus = dependencies.IsReady ? "เอนจินพร้อมใช้งาน" : "ยังไม่ได้ติดตั้ง yt-dlp และ FFmpeg";
+        _appStatus = dependencies.IsReady
+            ? "ระบบดาวน์โหลดมีเดียและระบบแปลง/บีบอัดไฟล์พร้อมใช้งานแล้ว"
+            : "ยังไม่ได้ดาวน์โหลดส่วนประกอบที่จำเป็น";
 
         NavigateCommand = new RelayCommand<string>(Navigate);
         SetupEnginesCommand = new AsyncRelayCommand(ConfirmAndSetupEnginesAsync);
@@ -90,7 +103,10 @@ public sealed class MainViewModel : ObservableObject
         dependencies.DownloadProgressChanged += (name, progress) =>
         {
             EngineProgress = progress;
-            AppStatus = $"กำลังดาวน์โหลด {name} {progress:F0}%";
+            var friendlyName = name.Equals("yt-dlp", StringComparison.OrdinalIgnoreCase)
+                ? "ส่วนดาวน์โหลดมีเดีย"
+                : "ส่วนแปลงและบีบอัดไฟล์";
+            AppStatus = $"กำลังดาวน์โหลด{friendlyName} {progress:F0}%";
         };
         dependencies.AvailabilityChanged += RefreshEngineAvailability;
         DownloaderVm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(DownloaderViewModel.ActiveDownloadsCount)) OnPropertyChanged(nameof(DownloaderNavTitle)); };
@@ -107,7 +123,7 @@ public sealed class MainViewModel : ObservableObject
             return;
         }
 
-        SetUnavailableState("ยังไม่ได้ติดตั้ง yt-dlp และ FFmpeg");
+        SetUnavailableState("ยังไม่ได้ดาวน์โหลดส่วนประกอบที่จำเป็น");
         if (_settings.Settings.HasSeenEnginePrompt) return;
         _settings.Settings.HasSeenEnginePrompt = true;
         _settings.SaveSettings();
@@ -134,23 +150,23 @@ public sealed class MainViewModel : ObservableObject
         IsEngineInitializing = true;
         EngineState = EngineUiState.Downloading;
         EngineProgress = 0;
-        AppStatus = mode == EngineSetupMode.RefreshAll ? "กำลังอัปเดตเอนจิน..." : "กำลังดาวน์โหลดเอนจิน...";
+        AppStatus = mode == EngineSetupMode.RefreshAll ? "กำลังดาวน์โหลดส่วนประกอบใหม่..." : "กำลังดาวน์โหลดส่วนประกอบที่จำเป็น...";
         try
         {
             var succeeded = await _dependencies.EnsureDependenciesAsync(
-                new Progress<string>(message => AppStatus = message), mode: mode);
+                new Progress<string>(message => AppStatus = SettingsViewModel.MakeEngineMessageFriendly(message)), mode: mode);
             EnginesReady = _dependencies.IsReady;
             if (succeeded) SetReadyState();
             else if (_dependencies.IsReady)
             {
                 EngineState = EngineUiState.Failed;
-                AppStatus = "อัปเดตไม่สำเร็จ แต่ยังใช้เอนจินเดิมได้";
+                AppStatus = "ดาวน์โหลดไม่สำเร็จ แต่ระบบเดิมยังใช้งานได้";
                 OnPropertyChanged(nameof(EngineActionLabel));
             }
             else
             {
                 EngineState = EngineUiState.Failed;
-                AppStatus = "เตรียมเอนจินไม่สำเร็จ ตรวจสอบอินเทอร์เน็ตแล้วลองอีกครั้ง";
+                AppStatus = "เตรียมระบบไม่สำเร็จ ตรวจสอบอินเทอร์เน็ตแล้วลองอีกครั้ง";
             }
         }
         finally { IsEngineInitializing = false; }
@@ -159,7 +175,7 @@ public sealed class MainViewModel : ObservableObject
     private void RefreshEngineAvailability()
     {
         if (_dependencies.IsReady) SetReadyState();
-        else SetUnavailableState("ยังไม่ได้ติดตั้ง yt-dlp และ FFmpeg");
+        else SetUnavailableState("ยังไม่ได้ดาวน์โหลดส่วนประกอบที่จำเป็น");
     }
 
     private void SetReadyState()
@@ -167,7 +183,7 @@ public sealed class MainViewModel : ObservableObject
         EnginesReady = true;
         EngineState = EngineUiState.Ready;
         EngineProgress = 100;
-        AppStatus = "เอนจิน yt-dlp และ FFmpeg พร้อมใช้งาน";
+        AppStatus = "ระบบดาวน์โหลดมีเดียและระบบแปลง/บีบอัดไฟล์พร้อมใช้งานแล้ว";
         OnPropertyChanged(nameof(EngineActionLabel));
         OnPropertyChanged(nameof(EngineToolTip));
     }

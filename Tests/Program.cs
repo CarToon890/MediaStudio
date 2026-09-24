@@ -1,9 +1,12 @@
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using System.Text;
 using MediaStudio.Models;
 using MediaStudio.Services;
 using MediaStudio.ViewModels;
@@ -163,6 +166,97 @@ try
     Check(!new MediaWorkspace(workspacePath).Assets.Any(x => x.FilePath == missingPath), "Missing workspace file was not removed on reload");
     Console.WriteLine("PASS: waveform, audio trimming, workspace persistence and routing");
 
+    Check(AppUpdateService.TryParseStableVersion("v1.2.3", out var parsedVersion) && parsedVersion == new Version(1, 2, 3),
+        "Stable release tag was rejected");
+    foreach (var invalidTag in new[] { "1.2.3", "v1.2", "v1.2.3-beta", "v01.2.3.4" })
+        Check(!AppUpdateService.TryParseStableVersion(invalidTag, out _), $"Non-stable tag was accepted: {invalidTag}");
+    Check(AppUpdateService.IsTrustedGitHubUrl("https://github.com/CarToon890/MediaStudio/releases/tag/v1.2.3"),
+        "Expected GitHub URL was rejected");
+    Check(!AppUpdateService.IsTrustedGitHubUrl("https://github.com.evil.invalid/update.zip"),
+        "Lookalike GitHub host was accepted");
+
+    var releaseJson = """
+        {
+          "tag_name": "v1.2.0",
+          "html_url": "https://github.com/CarToon890/MediaStudio/releases/tag/v1.2.0",
+          "draft": false,
+          "prerelease": false,
+          "assets": [
+            { "name": "MediaStudio-v1.2.0-win-x64.zip", "browser_download_url": "https://github.com/CarToon890/MediaStudio/releases/download/v1.2.0/MediaStudio-v1.2.0-win-x64.zip" },
+            { "name": "MediaStudio-v1.2.0-win-x64.zip.sha256", "browser_download_url": "https://github.com/CarToon890/MediaStudio/releases/download/v1.2.0/MediaStudio-v1.2.0-win-x64.zip.sha256" }
+          ]
+        }
+        """;
+    var updateHandler = new RoutedHandler();
+    updateHandler.AddText(AppUpdateService.LatestReleaseApi, releaseJson, "application/json");
+    using var updateClient = new HttpClient(updateHandler);
+    var updateService = new AppUpdateService(updateClient);
+    var updateCheck = await updateService.CheckLatestAsync(new Version(1, 1, 0));
+    Check(updateCheck.Status == AppUpdateCheckStatus.Success && updateCheck.IsUpdateAvailable &&
+          updateCheck.Release?.CanAutoUpdate == true && updateCheck.Release.Version == new Version(1, 2, 0),
+        "New stable release was not detected");
+    var sameVersionCheck = await updateService.CheckLatestAsync(new Version(1, 2, 0));
+    Check(sameVersionCheck.Status == AppUpdateCheckStatus.Success && !sameVersionCheck.IsUpdateAvailable,
+        "Current release was incorrectly reported as newer");
+    updateHandler.AddText(AppUpdateService.LatestReleaseApi,
+        releaseJson.Replace("\"prerelease\": false", "\"prerelease\": true"), "application/json");
+    Check((await updateService.CheckLatestAsync(new Version(1, 1, 0))).Status == AppUpdateCheckStatus.Failed,
+        "Prerelease was accepted as a stable update");
+
+    var packagePath = Path.Combine(root, "update.zip");
+    await using (var packageStream = File.Create(packagePath))
+    using (var archive = new ZipArchive(packageStream, ZipArchiveMode.Create))
+    {
+        var entry = archive.CreateEntry("MediaStudio.exe");
+        await using var entryStream = entry.Open();
+        await using var assemblyStream = File.OpenRead(typeof(MediaStudio.App).Assembly.Location);
+        await assemblyStream.CopyToAsync(entryStream);
+    }
+    var packageBytes = await File.ReadAllBytesAsync(packagePath);
+    var packageUrl = updateCheck.Release!.PackageUrl;
+    var checksumUrl = updateCheck.Release.ChecksumUrl;
+    updateHandler.AddBytes(packageUrl, packageBytes, "application/zip");
+    var currentAssemblyVersion = AppUpdateService.NormalizeVersion(typeof(MediaStudio.App).Assembly.GetName().Version!);
+    var currentAssemblyTag = $"v{currentAssemblyVersion.Major}.{currentAssemblyVersion.Minor}.{currentAssemblyVersion.Build}";
+    var updatePackageName = $"MediaStudio-{currentAssemblyTag}-win-x64.zip";
+    var checksum = Convert.ToHexString(SHA256.HashData(packageBytes)).ToLowerInvariant();
+    updateHandler.AddText(checksumUrl, $"{checksum}  {updatePackageName}\n", "text/plain");
+    var stagedRelease = new AppReleaseInfo
+    {
+        TagName = currentAssemblyTag,
+        Version = currentAssemblyVersion,
+        ReleaseUrl = updateCheck.Release.ReleaseUrl,
+        PackageUrl = packageUrl,
+        ChecksumUrl = checksumUrl
+    };
+    var staged = await updateService.StageUpdateAsync(stagedRelease);
+    Check(File.Exists(staged.ExecutablePath), "Validated update package was not staged");
+    Directory.Delete(staged.StagingDirectory, true);
+    updateHandler.AddText(checksumUrl, $"{new string('0', 64)}  {updatePackageName}\n", "text/plain");
+    var checksumFailed = false;
+    try { await updateService.StageUpdateAsync(stagedRelease); }
+    catch (InvalidDataException) { checksumFailed = true; }
+    Check(checksumFailed, "Package with invalid checksum was accepted");
+
+    var replacementRoot = Directory.CreateDirectory(Path.Combine(root, "replace-test")).FullName;
+    var replacementTarget = Path.Combine(replacementRoot, "MediaStudio.exe");
+    var replacementSource = Path.Combine(replacementRoot, "new.exe");
+    await File.WriteAllTextAsync(replacementTarget, "old");
+    await File.WriteAllTextAsync(replacementSource, "new");
+    UpdateBootstrapper.ReplaceFilesForTest(replacementTarget, replacementSource);
+    Check(await File.ReadAllTextAsync(replacementTarget) == "new" && !File.Exists(replacementSource),
+        "Updater did not replace the executable");
+    await File.WriteAllTextAsync(replacementTarget, "old-again");
+    var replacementFailed = false;
+    try { UpdateBootstrapper.ReplaceFilesForTest(replacementTarget, Path.Combine(replacementRoot, "missing.exe")); }
+    catch (FileNotFoundException) { replacementFailed = true; }
+    Check(replacementFailed && await File.ReadAllTextAsync(replacementTarget) == "old-again",
+        "Updater did not restore the old executable after replacement failure");
+    Check(SettingsViewModel.MakeEngineMessageFriendly("กำลังดาวน์โหลด yt-dlp และ FFmpeg") ==
+          "กำลังดาวน์โหลด ส่วนดาวน์โหลดมีเดีย และ ส่วนแปลงและบีบอัดไฟล์",
+        "Technical engine names leaked into friendly progress text");
+    Console.WriteLine("PASS: stable update detection, checksum validation and executable rollback");
+
     var handler = new DownloadHandler();
     using var client = new HttpClient(handler);
     typeof(DependencyService).GetField("_httpClient", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(dependency, client);
@@ -189,6 +283,7 @@ finally
 {
     Directory.Delete(root, recursive: true);
 }
+Environment.Exit(0);
 
 static ConversionItem Item(string source, string format = "MP4") => new()
 {
@@ -206,6 +301,26 @@ sealed class DownloadHandler : HttpMessageHandler
     {
         var content = new ByteArrayContent(Payload);
         if (Truncated) content.Headers.ContentLength = Payload.Length + 10;
+        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
+    }
+}
+
+sealed class RoutedHandler : HttpMessageHandler
+{
+    private readonly Dictionary<string, (byte[] Payload, string ContentType)> _responses = new(StringComparer.Ordinal);
+
+    public void AddText(string url, string content, string contentType) =>
+        AddBytes(url, Encoding.UTF8.GetBytes(content), contentType);
+
+    public void AddBytes(string url, byte[] content, string contentType) =>
+        _responses[url] = (content, contentType);
+
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+    {
+        if (request.RequestUri is null || !_responses.TryGetValue(request.RequestUri.AbsoluteUri, out var response))
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        var content = new ByteArrayContent(response.Payload);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(response.ContentType);
         return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
     }
 }

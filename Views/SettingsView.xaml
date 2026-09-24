@@ -17,7 +17,7 @@
         <!-- Header -->
         <StackPanel Grid.Row="0" Margin="0,0,0,24">
             <ui:TextBlock Text="การตั้งค่า" FontTypography="Title" />
-            <ui:TextBlock Text="ตั้งค่าโฟลเดอร์บันทึกไฟล์ การเร่งความเร็วด้วยการ์ดจอ และเอนจินประมวลผล" 
+            <ui:TextBlock Text="ตั้งค่าโฟลเดอร์บันทึกไฟล์ การประมวลผล ส่วนประกอบ และการอัปเดตโปรแกรม"
                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,4,0,0" />
         </StackPanel>
 
@@ -90,8 +90,9 @@
                         </Grid.ColumnDefinitions>
 
                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                            <ui:TextBlock Text="สถานะเอนจินประมวลผล (yt-dlp &amp; FFmpeg)" FontWeight="SemiBold" />
+                            <ui:TextBlock Text="ส่วนประกอบสำหรับดาวน์โหลดและประมวลผลไฟล์" FontWeight="SemiBold" />
                             <ui:TextBlock Text="{Binding EngineStatus}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />
+                            <ui:TextBlock Text="รายละเอียดทางเทคนิค: yt-dlp และ FFmpeg" Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="12" Margin="0,3,0,0" />
                         </StackPanel>
 
                         <ui:Button Grid.Column="1" Content="{Binding EngineActionLabel}" Icon="{ui:SymbolIcon Symbol=ArrowSync24}"
@@ -100,7 +101,44 @@
                     </Grid>
                 </Border>
 
-                <!-- 4. About App Card -->
+                <!-- 4. Application Update Card -->
+                <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                        CornerRadius="8" Padding="20" BorderThickness="1"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" Margin="0,0,0,16">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                <ui:TextBlock Text="การอัปเดต MediaStudio" FontWeight="SemiBold" />
+                                <ui:TextBlock Text="{Binding CurrentVersionDisplay}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />
+                                <ui:TextBlock Text="{Binding AppUpdateStatus}" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <ui:Button Content="{Binding AppUpdateButtonLabel}" Icon="{ui:SymbolIcon Symbol=Search24}"
+                                           Command="{Binding CheckAppUpdateCommand}"
+                                           IsEnabled="{Binding IsAppUpdateBusy, Converter={StaticResource InverseBooleanConverter}}" />
+                                <ui:Button Content="ดูรายละเอียด" Icon="{ui:SymbolIcon Symbol=Open24}"
+                                           Command="{Binding OpenLatestReleaseCommand}" Margin="8,0,0,0"
+                                           Visibility="{Binding IsAppUpdateAvailable, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                <ui:Button Content="อัปเดตตอนนี้" Icon="{ui:SymbolIcon Symbol=ArrowDownload24}"
+                                           Command="{Binding ApplyAppUpdateCommand}" Appearance="Primary" Margin="8,0,0,0"
+                                           IsEnabled="{Binding IsAppUpdateBusy, Converter={StaticResource InverseBooleanConverter}}"
+                                           Visibility="{Binding CanAutoUpdate, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            </StackPanel>
+                        </Grid>
+                        <ProgressBar Grid.Row="1" Value="{Binding AppUpdateProgress}" Maximum="100" Height="6" Margin="0,14,0,0"
+                                     Visibility="{Binding IsAppUpdateBusy, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                    </Grid>
+                </Border>
+
+                <!-- 5. About App Card -->
                 <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" 
                         CornerRadius="8" Padding="20" BorderThickness="1" 
                         BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">

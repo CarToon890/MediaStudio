@@ -19,6 +19,7 @@ public class DependencyService
     private readonly string _binDirectory;
     private readonly HttpClient _httpClient;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
+    public bool IsBusy => _semaphore.CurrentCount == 0;
 
     public string YtDlpPath { get; private set; } = string.Empty;
     public string FFmpegPath { get; private set; } = string.Empty;
