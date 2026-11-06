@@ -13,26 +13,28 @@ namespace MediaStudio.Services;
 public class YtDlpService
 {
     private readonly DependencyService _dependencyService;
+    private readonly DownloadVideoProcessor _videoProcessor;
     private static readonly Regex ProgressRegex = new(@"\[download\]\s+([\d\.]+)%\s+of\s+~?([\d\.]+\w+)\s+at\s+([\d\.]+\w+/s)\s+ETA\s+([\d:]+)", RegexOptions.Compiled);
     private static readonly Regex DestinationRegex = new(@"\[(?:Merger|download|ExtractAudio)\]\s+Destination:\s+(.+)", RegexOptions.Compiled);
     private static readonly Regex MergedRegex = new(@"\[Merger\]\s+Merging formats into ""?([^""\r\n]+)""?", RegexOptions.Compiled);
     private static readonly Regex AlreadyDownloadedRegex = new(@"\[download\]\s+(.+?)\s+has already been downloaded", RegexOptions.Compiled);
     private const string FinalPathPrefix = "__MEDIASTUDIO_FILE__";
 
-    public YtDlpService(DependencyService dependencyService)
+    public YtDlpService(DependencyService dependencyService, GpuCapabilityService? gpuCapabilities = null)
     {
         _dependencyService = dependencyService;
+        _videoProcessor = new DownloadVideoProcessor(dependencyService, gpuCapabilities ?? new GpuCapabilityService());
     }
 
     public virtual async Task<MediaMetadata?> GetMediaInfoAsync(string url, CancellationToken ct = default)
     {
-        if (!File.Exists(_dependencyService.YtDlpPath)) return null;
+        if (!IsWebUrl(url) || !File.Exists(_dependencyService.YtDlpPath)) return null;
 
         try
         {
             var jsonBuilder = new System.Text.StringBuilder();
             var cmd = Cli.Wrap(_dependencyService.YtDlpPath)
-                .WithArguments(new[] { "--dump-single-json", "--no-playlist", "--skip-download", url })
+                .WithArguments(new[] { "--ignore-config", "--no-plugin-dirs", "--dump-single-json", "--no-playlist", "--skip-download", "--", url })
                 .WithValidation(CommandResultValidation.None);
 
             await foreach (var cmdEvent in cmd.ListenAsync(ct))
@@ -46,24 +48,7 @@ public class YtDlpService
             var json = jsonBuilder.ToString().Trim();
             if (string.IsNullOrEmpty(json)) return null;
 
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            var title = root.TryGetProperty("title", out var t) ? t.GetString() ?? "Unknown" : "Unknown";
-            var uploader = root.TryGetProperty("uploader", out var u) ? u.GetString() ?? "" : "";
-            var thumbnail = root.TryGetProperty("thumbnail", out var th) ? th.GetString() ?? "" : "";
-            var durationSec = root.TryGetProperty("duration", out var d) ? d.GetDouble() : 0;
-            var extractor = root.TryGetProperty("extractor_key", out var ex) ? ex.GetString() ?? "" : "";
-
-            return new MediaMetadata
-            {
-                Title = title,
-                Author = uploader,
-                ThumbnailUrl = thumbnail,
-                Duration = TimeSpan.FromSeconds(durationSec),
-                Url = url,
-                Extractor = extractor
-            };
+            return ParseMetadata(json, url);
         }
         catch
         {
@@ -71,7 +56,110 @@ public class YtDlpService
         }
     }
 
+    public static bool IsWebUrl(string url) => Uri.TryCreate(url, UriKind.Absolute, out var parsed)
+        && parsed.Scheme is "https" or "http" && !string.IsNullOrWhiteSpace(parsed.Host) && string.IsNullOrEmpty(parsed.UserInfo);
+
+    public static MediaMetadata ParseMetadata(string json, string url)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        static string Text(JsonElement node, string key) => node.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : "";
+        static VideoDimensions? Size(JsonElement node)
+        {
+            if (node.TryGetProperty("width", out var w) && w.ValueKind == JsonValueKind.Number && w.TryGetInt32(out var width)
+                && node.TryGetProperty("height", out var h) && h.ValueKind == JsonValueKind.Number && h.TryGetInt32(out var height) && width > 0 && height > 0 && width <= 65536 && height <= 65536)
+                return new(width, height);
+            return null;
+        }
+        var sizes = new List<VideoDimensions>();
+        if (root.TryGetProperty("formats", out var formats) && formats.ValueKind == JsonValueKind.Array)
+            foreach (var format in formats.EnumerateArray())
+                if (Text(format, "vcodec") != "none" && Text(format, "protocol") != "mhtml"
+                    && Text(format, "ext") is not ("jpg" or "png" or "webp") && Size(format) is { } size) sizes.Add(size);
+        if (sizes.Count == 0 && Size(root) is { } fallback) sizes.Add(fallback);
+        var duration = root.TryGetProperty("duration", out var d) && d.ValueKind == JsonValueKind.Number && d.TryGetDouble(out var seconds)
+            && double.IsFinite(seconds) && seconds >= 0 && seconds < TimeSpan.MaxValue.TotalSeconds ? seconds : 0;
+        return new MediaMetadata { Title = Text(root, "title"), Author = Text(root, "uploader"), ThumbnailUrl = Text(root, "thumbnail"),
+            Duration = TimeSpan.FromSeconds(duration), Url = url, Extractor = Text(root, "extractor_key"), AvailableVideoResolutions = sizes.Distinct().ToArray() };
+    }
+
     public virtual async Task<MediaOperationResult> DownloadAsync(DownloadItem item, string outputFolder, CancellationToken ct = default)
+    {
+        if (!IsWebUrl(item.Url)) return Fail(item, "กรุณาใช้ลิงก์ HTTP หรือ HTTPS ที่ถูกต้อง");
+        Directory.CreateDirectory(outputFolder);
+        var stage = Path.Combine(outputFolder, ".mediastudio-" + Guid.NewGuid().ToString("N"));
+        var name = FileNameService.SanitizeSuggestedName(item.RequestedFileName);
+        string? native = null;
+        Directory.CreateDirectory(stage);
+        try
+        {
+            var downloaded = await DownloadCoreAsync(item, stage, ct);
+            if (!downloaded.Success) return downloaded;
+            native = downloaded.OutputPath;
+            var result = item.IsAudioOnly ? native : await _videoProcessor.ProcessAsync(native, item, stage, ct);
+            ct.ThrowIfCancellationRequested();
+            var final = PublishFile(result, outputFolder, name);
+            item.OutputPath = final;
+            item.Progress = 100;
+            item.Status = TaskState.Completed;
+            item.StatusMessage = "ดาวน์โหลดเสร็จสมบูรณ์";
+            return MediaOperationResult.Completed(final);
+        }
+        catch (NotSupportedException error)
+        {
+            PreserveSource();
+            return Fail(item, error.Message + SavedSourceMessage());
+        }
+        catch (OperationCanceledException)
+        {
+            PreserveSource();
+            item.Status = TaskState.Cancelled;
+            item.StatusMessage = "ยกเลิกแล้ว" + SavedSourceMessage();
+            return MediaOperationResult.Failed(item.StatusMessage);
+        }
+        catch
+        {
+            PreserveSource();
+            return Fail(item, "ไม่สามารถดาวน์โหลดหรือลดความละเอียดได้ ตรวจสอบไฟล์ต้นทางและพื้นที่ปลายทาง" + SavedSourceMessage());
+        }
+        finally
+        {
+            // Only this job's generated staging directory is eligible for cleanup.
+            if (!string.Equals(Path.GetDirectoryName(item.RetainedSourcePath), stage, StringComparison.OrdinalIgnoreCase))
+                try { Directory.Delete(stage, true); } catch { }
+        }
+        string SavedSourceMessage() => string.IsNullOrEmpty(item.RetainedSourcePath) ? "" : $" • เก็บต้นทางไว้ที่ {item.RetainedSourcePath}";
+        void PreserveSource()
+        {
+            if (native == null || !File.Exists(native) || new FileInfo(native).Length == 0) return;
+            try { item.RetainedSourcePath = PublishFile(native, outputFolder, name + "_original"); }
+            catch { item.RetainedSourcePath = native; }
+        }
+    }
+
+    private static MediaOperationResult Fail(DownloadItem item, string message)
+    { item.Status = TaskState.Failed; item.StatusMessage = message; return MediaOperationResult.Failed(message); }
+
+    private static string PublishFile(string source, string folder, string name)
+    {
+        for (var index = 0; ; index++)
+        {
+            var target = Path.Combine(folder, name + (index == 0 ? "" : $" ({index})") + Path.GetExtension(source));
+            try { File.Move(source, target, false); return target; }
+            catch (IOException) when (File.Exists(target) || Directory.Exists(target)) { }
+        }
+    }
+
+    internal static string[] BuildFormatArguments(DownloadItem item)
+    {
+        var target = VideoDimensions.TargetHeight(item.Quality);
+        var native = item.AvailableResolutions.Where(x => x.IsNativeFor(target)).OrderByDescending(x => (long)x.Width * x.Height).FirstOrDefault();
+        var selector = native == null ? "bv*+ba/bv*/b"
+            : $"bv*[width={native.Width}][height={native.Height}]+ba/bv*[width={native.Width}][height={native.Height}]/bv*+ba/bv*/b";
+        return new[] { "-f", selector, "-S", $"+res:{target}", "--merge-output-format", "mp4", "--remux-video", "mp4" };
+    }
+
+    protected virtual async Task<MediaOperationResult> DownloadCoreAsync(DownloadItem item, string outputFolder, CancellationToken ct = default)
     {
         if (!File.Exists(_dependencyService.YtDlpPath))
         {
@@ -94,6 +182,7 @@ public class YtDlpService
 
             var arguments = new System.Collections.Generic.List<string>
             {
+                "--ignore-config", "--no-plugin-dirs",
                 "--newline",
                 "--no-playlist",
                 "--progress",
@@ -119,21 +208,9 @@ public class YtDlpService
             }
             else
             {
-                var heightLimit = item.Quality switch
-                {
-                    "4K (2160p)" => "2160",
-                    "2K (1440p)" => "1440",
-                    "1080p" => "1080",
-                    "720p" => "720",
-                    "480p" => "480",
-                    _ => "1080"
-                };
-
-                arguments.Add("-f");
-                arguments.Add($"bestvideo[height<={heightLimit}]+bestaudio/best[height<={heightLimit}]/best");
-                arguments.Add("--merge-output-format");
-                arguments.Add("mp4");
+                arguments.AddRange(BuildFormatArguments(item));
             }
+            arguments.Add("--");
 
             arguments.Add(item.Url);
 
@@ -203,23 +280,21 @@ public class YtDlpService
             if (exitCode != 0)
             {
                 item.Status = TaskState.Failed;
-                item.StatusMessage = !string.IsNullOrWhiteSpace(lastError) 
-                    ? $"ดาวน์โหลดไม่สำเร็จ: {lastError}" 
+                item.StatusMessage = !string.IsNullOrWhiteSpace(lastError)
+                    ? $"ดาวน์โหลดไม่สำเร็จ: {Regex.Replace(lastError, @"https?://[^\s]+", "[ลิงก์]")}"
                     : $"ดาวน์โหลดไม่สำเร็จ (รหัสข้อผิดพลาด {exitCode})";
                 return MediaOperationResult.Failed(item.StatusMessage);
             }
 
             item.Progress = 100;
-            item.Status = TaskState.Completed;
-            item.StatusMessage = "ดาวน์โหลดเสร็จสมบูรณ์";
-            item.OutputPath = ResolveOutputPath(finalDestination, outputFolder, requestedName, item.IsAudioOnly ? "mp3" : "mp4");
-            if (!File.Exists(item.OutputPath))
+            var resolvedPath = ResolveOutputPath(finalDestination, outputFolder, requestedName, item.IsAudioOnly ? "mp3" : "mp4");
+            if (!File.Exists(resolvedPath) || new FileInfo(resolvedPath).Length == 0)
             {
                 item.Status = TaskState.Failed;
                 item.StatusMessage = "ดาวน์โหลดเสร็จแต่ไม่พบไฟล์ผลลัพธ์";
                 return MediaOperationResult.Failed(item.StatusMessage);
             }
-            return MediaOperationResult.Completed(item.OutputPath);
+            return MediaOperationResult.Completed(resolvedPath);
         }
         catch (OperationCanceledException)
         {
@@ -227,27 +302,25 @@ public class YtDlpService
             item.StatusMessage = "ยกเลิกการดาวน์โหลด";
             return MediaOperationResult.Failed(item.StatusMessage);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             item.Status = TaskState.Failed;
-            item.StatusMessage = $"เกิดข้อผิดพลาด: {ex.Message}";
+            item.StatusMessage = "เกิดข้อผิดพลาดในการดาวน์โหลด กรุณาตรวจสอบลิงก์และส่วนประกอบ";
             return MediaOperationResult.Failed(item.StatusMessage);
         }
     }
 
     private static string ResolveOutputPath(string? reportedPath, string outputFolder, string requestedName, string expectedExtension)
     {
+        var exact = Path.GetFullPath(Path.Combine(outputFolder, $"{requestedName}.{expectedExtension}"));
         if (!string.IsNullOrWhiteSpace(reportedPath))
         {
             var cleaned = reportedPath.Trim().Trim('"');
             if (!Path.IsPathRooted(cleaned)) cleaned = Path.Combine(outputFolder, cleaned);
-            if (File.Exists(cleaned)) return Path.GetFullPath(cleaned);
+            cleaned = Path.GetFullPath(cleaned);
+            if (string.Equals(Path.GetDirectoryName(cleaned), Path.GetFullPath(outputFolder).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)
+                && string.Equals(Path.GetExtension(cleaned), "." + expectedExtension, StringComparison.OrdinalIgnoreCase) && File.Exists(cleaned)) return cleaned;
         }
-
-        var exact = Path.Combine(outputFolder, $"{requestedName}.{expectedExtension}");
-        if (File.Exists(exact)) return exact;
-        return Directory.EnumerateFiles(outputFolder, requestedName + ".*")
-            .OrderByDescending(File.GetLastWriteTimeUtc)
-            .FirstOrDefault() ?? exact;
+        return exact; // Never select arbitrary .part/.ytdl/fragment files by glob.
     }
 }

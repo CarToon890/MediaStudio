@@ -16,6 +16,7 @@ public enum EngineSetupMode
 
 public class DependencyService
 {
+    public OperationCoordinator Operations { get; } = new();
     private readonly string _binDirectory;
     private readonly HttpClient _httpClient;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
@@ -66,9 +67,8 @@ public class DependencyService
             if (!File.Exists(YtDlpPath))
             {
                 progress?.Report("กำลังดาวน์โหลดเอนจิน yt-dlp...");
-                var ytDlpUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
                 var targetPath = Path.Combine(_binDirectory, "yt-dlp.exe");
-                await DownloadFileAsync(ytDlpUrl, targetPath, "yt-dlp", ct);
+                await DownloadVerifiedEngineAsync("yt-dlp/yt-dlp", "yt-dlp.exe", targetPath, "yt-dlp", ct);
                 YtDlpPath = targetPath;
             }
 
@@ -76,9 +76,8 @@ public class DependencyService
             if (!File.Exists(FFmpegPath))
             {
                 progress?.Report("กำลังดาวน์โหลดเอนจิน FFmpeg...");
-                var ffmpegZipUrl = "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip";
                 var tempZip = Path.Combine(_binDirectory, "ffmpeg_temp.zip");
-                await DownloadFileAsync(ffmpegZipUrl, tempZip, "FFmpeg", ct);
+                await DownloadVerifiedEngineAsync("yt-dlp/FFmpeg-Builds", "ffmpeg-master-latest-win64-gpl.zip", tempZip, "FFmpeg", ct);
 
                 progress?.Report("กำลังแตกไฟล์ FFmpeg...");
                 using (var archive = ZipFile.OpenRead(tempZip))
@@ -112,6 +111,7 @@ public class DependencyService
             AvailabilityChanged?.Invoke();
             return IsReady;
         }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             progress?.Report($"เกิดข้อผิดพลาดในการโหลดเอนจิน: {ex.Message}");
@@ -135,9 +135,9 @@ public class DependencyService
         try
         {
             progress?.Report("กำลังดาวน์โหลด yt-dlp รุ่นล่าสุด...");
-            await DownloadFileAsync("https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe", stagedYtDlp, "yt-dlp", ct);
+            await DownloadVerifiedEngineAsync("yt-dlp/yt-dlp", "yt-dlp.exe", stagedYtDlp, "yt-dlp", ct);
             progress?.Report("กำลังดาวน์โหลด FFmpeg รุ่นล่าสุด...");
-            await DownloadFileAsync("https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip", stagedZip, "FFmpeg", ct);
+            await DownloadVerifiedEngineAsync("yt-dlp/FFmpeg-Builds", "ffmpeg-master-latest-win64-gpl.zip", stagedZip, "FFmpeg", ct);
             progress?.Report("กำลังตรวจสอบไฟล์เอนจิน...");
             using (var archive = ZipFile.OpenRead(stagedZip))
             {
@@ -177,13 +177,17 @@ public class DependencyService
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
             try { await process.WaitForExitAsync(linked.Token); }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            catch (OperationCanceledException)
             {
-                try { process.Kill(true); } catch { }
+                try { if (!process.HasExited) process.Kill(true); } catch { }
+                await process.WaitForExitAsync(CancellationToken.None);
+                ct.ThrowIfCancellationRequested();
                 return false;
             }
+            ct.ThrowIfCancellationRequested();
             return process.ExitCode == 0;
         }
+        catch (OperationCanceledException) { throw; }
         catch { return false; }
     }
 
@@ -192,29 +196,46 @@ public class DependencyService
         var backupId = Guid.NewGuid().ToString("N");
         var backupYtDlp = localYtDlp + ".backup." + backupId;
         var backupFfmpeg = localFfmpeg + ".backup." + backupId;
+        var movedYt = false; var movedFf = false;
+        var installedYt = false; var installedFf = false;
         try
         {
-            if (File.Exists(localYtDlp)) File.Move(localYtDlp, backupYtDlp);
-            if (File.Exists(localFfmpeg)) File.Move(localFfmpeg, backupFfmpeg);
-            File.Move(stagedYtDlp, localYtDlp);
-            File.Move(stagedFfmpeg, localFfmpeg);
-            TryDelete(backupYtDlp);
-            TryDelete(backupFfmpeg);
+            if (File.Exists(localYtDlp)) { File.Move(localYtDlp, backupYtDlp); movedYt = true; }
+            if (File.Exists(localFfmpeg)) { File.Move(localFfmpeg, backupFfmpeg); movedFf = true; }
+            File.Move(stagedYtDlp, localYtDlp); installedYt = true;
+            File.Move(stagedFfmpeg, localFfmpeg); installedFf = true;
         }
         catch
         {
-            TryDelete(localYtDlp);
-            TryDelete(localFfmpeg);
-            if (File.Exists(backupYtDlp)) File.Move(backupYtDlp, localYtDlp);
-            if (File.Exists(backupFfmpeg)) File.Move(backupFfmpeg, localFfmpeg);
+            // Never delete a pre-existing engine that has not been backed up.
+            if (installedYt) TryDelete(localYtDlp);
+            if (installedFf) TryDelete(localFfmpeg);
+            if (movedYt) File.Move(backupYtDlp, localYtDlp);
+            if (movedFf) File.Move(backupFfmpeg, localFfmpeg);
             throw;
         }
+        TryDelete(backupYtDlp);
+        TryDelete(backupFfmpeg);
     }
 
     private static void TryDelete(string path)
     {
         try { if (File.Exists(path)) File.Delete(path); }
         catch { }
+    }
+
+    private async Task DownloadVerifiedEngineAsync(string repository, string asset, string destination, string label, CancellationToken ct)
+    {
+        var manifest = await EngineIntegrity.ResolveAsync(_httpClient, repository, asset, ct);
+        var verified = destination + ".verify-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            await DownloadFileAsync(manifest.Url, verified, label, ct);
+            await EngineIntegrity.VerifyAsync(verified, manifest.Hash, ct);
+            ct.ThrowIfCancellationRequested();
+            File.Move(verified, destination, true);
+        }
+        finally { TryDelete(verified); }
     }
 
     private async Task DownloadFileAsync(string url, string destinationPath, string name, CancellationToken ct)

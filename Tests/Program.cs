@@ -11,8 +11,22 @@ using MediaStudio.Models;
 using MediaStudio.Services;
 using MediaStudio.ViewModels;
 
+// Hidden subprocess fixture for validating cancellation; never starts WPF.
+if (args.Length == 2 && args[0] == "--engine-child")
+{
+    File.WriteAllText(args[1], Environment.ProcessId.ToString());
+    await Task.Delay(Timeout.Infinite);
+    return;
+}
+
+if (args.Length == 3 && args[0] == "--download-local")
+{
+    await LocalDownloadRegression.RunAsync(args[1], args[2]);
+    return;
+}
+
 // Dependency-free integration checks. Pass the path to an installed FFmpeg executable.
-if (args.Length is < 1 or > 2 || !File.Exists(args[0]) || (args.Length == 2 && args[1] != "--ui-only"))
+if (args.Length is < 1 or > 2 || !File.Exists(args[0]) || (args.Length == 2 && args[1] is not ("--ui-only" or "--preview-only" or "--gpu-only" or "--safety-only" or "--core-only")))
     throw new ArgumentException("Pass the full path to ffmpeg.exe.");
 var ffmpegPath = Path.GetFullPath(args[0]);
 var root = Path.Combine(Path.GetTempPath(), "MediaStudio-tests-" + Guid.NewGuid().ToString("N"));
@@ -35,11 +49,14 @@ try
         Check(process.ExitCode == 0, "Generate media: " + error);
     }
 
-    if (args.Length == 2)
+    if (args.Length == 2 && args[1] != "--core-only")
     {
-        await UiRegression.RunAsync(root, source, dependency);
-        return;
+        if (args[1] == "--safety-only") await PatchSafetyRegression.RunAsync(root, source, dependency);
+        else if (args[1] == "--gpu-only") await GpuCapabilityRegression.RunAsync(root, source, dependency);
+        else await UiRegression.RunAsync(root, source, dependency, previewOnly: args[1] == "--preview-only");
     }
+    else
+    {
     var output = Path.Combine(root, "output");
     Directory.CreateDirectory(output);
     var existing = Path.Combine(output, "clip_converted.mp4");
@@ -54,7 +71,8 @@ try
     Check((await ffmpeg.ConvertAsync(second, output, false)).Success, second.StatusMessage);
     Check(first.OutputPath != second.OutputPath, "Same-name inputs must have distinct outputs");
     Check(await File.ReadAllTextAsync(existing) == "existing result", "Existing output changed");
-    Check(firstBytes.SequenceEqual(await File.ReadAllBytesAsync(first.OutputPath)), "First result overwritten");
+    var preservedFirstBytes = await File.ReadAllBytesAsync(first.OutputPath);
+    Check(firstBytes.SequenceEqual(preservedFirstBytes), "First result overwritten");
     Console.WriteLine("PASS: existing outputs and same-basename results preserved");
 
     foreach (var format in new[] { "MP3", "GIF", "WAV", "FLAC", "MP4", "MKV" })
@@ -66,6 +84,8 @@ try
         Check(new FileInfo(item.OutputPath).Length > 0, "Empty " + format);
     }
     Console.WriteLine("PASS: all six target formats with compression requested");
+    await PatchSafetyRegression.RunAsync(root, source, dependency);
+    await GpuCapabilityRegression.RunAsync(root, source, dependency);
 
     // Avoid reading/writing the user's settings file in these checks.
     var settings = (SettingsService)RuntimeHelpers.GetUninitializedObject(typeof(SettingsService));
@@ -75,7 +95,7 @@ try
     var workspace = new MediaWorkspace(workspacePath);
     await PatchRegression.RunAsync(root, source, ffmpeg, settings, dependency);
     await UxRegression.RunAsync(root, source, ffmpeg, dependency);
-    await UiRegression.RunAsync(root, source, dependency);
+    if (!args.Contains("--core-only")) await UiRegression.RunAsync(root, source, dependency);
     var initialTrimmer = new TrimmerViewModel(ffmpeg, settings, dependency, workspace);
     Check(initialTrimmer.StartTimeFormatted == "--:--:--" && !initialTrimmer.SeekToStartCommand.CanExecute(null),
         "Unloaded video must show no invented times and must disable seek");
@@ -289,6 +309,7 @@ try
     Check(failed && (await File.ReadAllBytesAsync(destination)).SequenceEqual(handler.Payload), "Cancelled download replaced existing executable");
     Check(!Directory.EnumerateFiles(root, "*.partial").Any(), "Cancelled download left partial files");
     Console.WriteLine("PASS: interrupted/cancelled downloads stay unpublished; retry succeeds");
+    }
 }
 finally
 {

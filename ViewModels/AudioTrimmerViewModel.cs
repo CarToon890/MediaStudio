@@ -121,6 +121,9 @@ public sealed class AudioTrimmerViewModel : ObservableObject
 
     public async Task LoadFileAsync(string path)
     {
+        if (!_dependencies.Operations.TryBeginWork(out var operation)) { StatusText = "กำลังอัปเดตโปรแกรมหรือส่วนประกอบ กรุณารอสักครู่"; return; }
+        using var operationLease = operation;
+
         if (_isTrimming) return;
         _loadCts?.Cancel();
         using var load = new CancellationTokenSource();
@@ -195,6 +198,9 @@ public sealed class AudioTrimmerViewModel : ObservableObject
 
     private async Task StartTrimAsync()
     {
+        if (!_dependencies.Operations.TryBeginWork(out var operation)) { StatusText = "กำลังอัปเดตโปรแกรมหรือส่วนประกอบ กรุณารอสักครู่"; return; }
+        using var operationLease = operation;
+
         if (!HasLoadedFile || IsBusy) return;
         if (EndSeconds <= StartSeconds || EndSeconds > TotalSeconds + .01)
         {

@@ -18,6 +18,12 @@
   <TextBlock Text="{Binding StatusText}" Style="{StaticResource SecondaryText}" AutomationProperties.LiveSetting="Polite"/>
  </StackPanel></Border>
 <Border Style="{StaticResource Surface}"><StackPanel><TextBlock Text="คิวการแปลงไฟล์" Style="{StaticResource SectionTitle}"/><TextBlock Text="ยังไม่มีไฟล์ในคิว เพิ่มไฟล์หรือลากมาวางในหน้านี้" Margin="0,16" TextWrapping="Wrap" Visibility="{Binding HasConversionItems, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>                <ListBox  ItemsSource="{Binding ConversionList}" Background="Transparent" BorderThickness="0" MaxHeight="560" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="MaxWidth" Value="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ScrollContentPresenter}}"/>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <Border Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="6" Padding="12" Margin="0,0,0,8">

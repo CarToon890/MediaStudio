@@ -10,15 +10,26 @@ using MediaStudio.Models;
 
 namespace MediaStudio.Services;
 
-public class FFmpegService
+public class FFmpegService : IDisposable
 {
     private readonly DependencyService _dependencyService;
+    private readonly CancellationTokenSource _lifetime = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _previews = new();
+    public void Dispose()
+    {
+        _lifetime.Cancel();
+        foreach (var path in _previews.Keys) TryDeleteOutput(path);
+    }
+
     private static readonly Regex DurationRegex = new(@"Duration:\s+(\d+):(\d+):(\d+\.\d+)", RegexOptions.Compiled);
     private static readonly Regex TimeProgressRegex = new(@"time=(\d+):(\d+):(\d+\.\d+)", RegexOptions.Compiled);
 
-    public FFmpegService(DependencyService dependencyService)
+    public GpuCapabilityService GpuCapabilities { get; }
+
+    public FFmpegService(DependencyService dependencyService, GpuCapabilityService? gpuCapabilities = null)
     {
         _dependencyService = dependencyService;
+        GpuCapabilities = gpuCapabilities ?? new GpuCapabilityService();
     }
 
     public virtual async Task<TimeSpan> GetDurationAsync(string inputFilePath, CancellationToken ct = default)
@@ -71,7 +82,21 @@ public class FFmpegService
             item.StatusMessage = "กำลังเริ่มแปลงไฟล์...";
             item.Progress = 0;
 
+            item.UsedEncoder = string.Empty;
+            item.EncoderNotice = string.Empty;
+            ct.ThrowIfCancellationRequested();
+            var streams = await VideoInspectionService.InspectAsync(_dependencyService.FFmpegPath, item.SourceFilePath, ct);
+            var needsVideoEncoder = streams.Dimensions != null && (item.TargetFormat.Equals("MP4", StringComparison.OrdinalIgnoreCase)
+                || (item.CompressVideo && item.TargetSizeMb > 0 && item.TargetFormat.Equals("MKV", StringComparison.OrdinalIgnoreCase)));
+            useNvenc = useNvenc && needsVideoEncoder;
+            if (useNvenc)
+            {
+                var capability = await GpuCapabilities.CheckAsync(_dependencyService.FFmpegPath, ct: ct);
+                useNvenc = capability.Availability == EncoderAvailability.Available;
+                if (!useNvenc) item.EncoderNotice = capability.Message;
+            }
             var duration = await GetDurationAsync(item.SourceFilePath, ct);
+            ct.ThrowIfCancellationRequested();
             var totalSeconds = duration.TotalSeconds > 0 ? duration.TotalSeconds : 1;
 
             var baseName = Path.GetFileNameWithoutExtension(item.SourceFilePath);
@@ -83,15 +108,26 @@ public class FFmpegService
             // If hardware acceleration failed, attempt fallback to software CPU encoding
             if (!success && useNvenc && !ct.IsCancellationRequested)
             {
-                item.StatusMessage = "การเร่งความเร็วด้วย GPU ไม่พร้อมใช้งาน สลับไปใช้ CPU...";
+                item.EncoderNotice = "GPU เข้ารหัสงานนี้ไม่สำเร็จ จึงเปลี่ยนมาใช้ CPU";
+                item.StatusMessage = item.EncoderNotice;
+                useNvenc = false;
                 (success, error) = await ExecuteConversionAsync(item, outputFilePath, totalSeconds, false, ct);
             }
 
-            if (success && File.Exists(outputFilePath))
+            ct.ThrowIfCancellationRequested();
+            if (success && File.Exists(outputFilePath) && new FileInfo(outputFilePath).Length > 0)
             {
                 item.Progress = 100;
                 item.Status = TaskState.Completed;
-                item.StatusMessage = "แปลงไฟล์เสร็จสมบูรณ์";
+                if (string.IsNullOrEmpty(item.UsedEncoder)) item.UsedEncoder = streams.Dimensions == null && ext is "mp4" or "mkv"
+                    ? (ext == "mkv" && !item.CompressVideo ? "copy" : "aac") : ext switch
+                {
+                    "mp4" => useNvenc ? "h264_nvenc" : "libx264",
+                    "mkv" when item.CompressVideo && item.TargetSizeMb > 0 => useNvenc ? "h264_nvenc" : "libx264",
+                    "mkv" => "copy", "mp3" => "libmp3lame", "wav" => "pcm_s16le", "flac" => "flac", "gif" => "gif", _ => "libx264"
+                };
+                item.StatusMessage = $"แปลงไฟล์เสร็จสมบูรณ์ • {item.UsedEncoder}";
+                if (!string.IsNullOrEmpty(item.EncoderNotice)) item.StatusMessage += $" • {item.EncoderNotice}";
                 item.OutputPath = outputFilePath;
                 return MediaOperationResult.Completed(outputFilePath);
             }
@@ -138,7 +174,7 @@ public class FFmpegService
         }
     }
 
-    private async Task<(bool Success, string? Error)> ExecuteConversionAsync(ConversionItem item, string outputFilePath, double totalSeconds, bool useNvenc, CancellationToken ct)
+    protected virtual async Task<(bool Success, string? Error)> ExecuteConversionAsync(ConversionItem item, string outputFilePath, double totalSeconds, bool useNvenc, CancellationToken ct)
     {
         var ext = item.TargetFormat.ToLowerInvariant();
         var args = new System.Collections.Generic.List<string>
@@ -202,6 +238,7 @@ public class FFmpegService
             .WithArguments(args)
             .WithValidation(CommandResultValidation.None);
 
+        var actualEncoders = new List<string>();
         string? lastError = null;
         int exitCode = 0;
 
@@ -210,6 +247,12 @@ public class FFmpegService
             if (cmdEvent is StandardErrorCommandEvent stdErr)
             {
                 var text = stdErr.Text;
+                var mapping = Regex.Match(text, @"->\s*([a-zA-Z0-9_]+)\s*\(([a-zA-Z0-9_]+)\)");
+                if (mapping.Success)
+                {
+                    var encoder = mapping.Groups[2].Value == "native" ? mapping.Groups[1].Value : mapping.Groups[2].Value;
+                    if (!actualEncoders.Contains(encoder)) actualEncoders.Add(encoder);
+                }
                 var match = TimeProgressRegex.Match(text);
                 if (match.Success)
                 {
@@ -232,6 +275,7 @@ public class FFmpegService
             }
         }
 
+        if (exitCode == 0 && actualEncoders.Count > 0) item.UsedEncoder = string.Join(", ", actualEncoders);
         return (exitCode == 0, lastError);
     }
 
@@ -292,8 +336,11 @@ public class FFmpegService
         if (!File.Exists(_dependencyService.FFmpegPath) || !File.Exists(inputFilePath))
             return new AudioWaveformResult { ErrorMessage = "ไม่พบไฟล์ต้นทางหรือเอนจิน FFmpeg" };
 
+        using var analysis = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetime.Token);
+        ct = analysis.Token;
         var tempPath = Path.Combine(Path.GetTempPath(), $"mediastudio-waveform-{Guid.NewGuid():N}.pcm");
         var previewPath = Path.Combine(Path.GetTempPath(), $"mediastudio-preview-{Guid.NewGuid():N}.mp3");
+        _previews.TryAdd(previewPath, 0);
         try
         {
             var result = await Cli.Wrap(_dependencyService.FFmpegPath)

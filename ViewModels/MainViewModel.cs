@@ -146,6 +146,7 @@ public sealed class MainViewModel : ObservableObject
     private async Task ConfirmAndSetupEnginesAsync()
     {
         if (IsEngineInitializing) return;
+        if (_dependencies.Operations.IsMaintenance) { AppStatus = "กรุณารอให้การอัปเดตเสร็จก่อน"; return; }
         var refresh = _dependencies.IsReady;
         if (!_confirmation.ConfirmEngineDownload(refresh)) return;
         await InitializeEnginesAsync(refresh ? EngineSetupMode.RefreshAll : EngineSetupMode.InstallMissing);
@@ -154,6 +155,9 @@ public sealed class MainViewModel : ObservableObject
     private async Task InitializeEnginesAsync(EngineSetupMode mode)
     {
         if (IsEngineInitializing) return;
+        if (!_dependencies.Operations.TryBeginMaintenance(out var operation))
+        { AppStatus = "กรุณารอให้งานที่กำลังทำเสร็จก่อนติดตั้งส่วนประกอบ"; return; }
+        using var operationLease = operation;
         IsEngineInitializing = true;
         EngineState = EngineUiState.Downloading;
         EngineProgress = 0;

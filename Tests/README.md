@@ -1,6 +1,6 @@
 # Regression checks
 
-Requires Windows, .NET 9 SDK and an installed FFmpeg with libx264, AAC, MP3 and FLAC encoders.
+Requires Windows, .NET 10 SDK (10.0.403; see global.json) and an installed FFmpeg with libx264, AAC, MP3 and FLAC encoders.
 
 Run from the repository root:
 
@@ -40,3 +40,81 @@ dotnet run --project Tests/MediaStudio.RegressionTests.csproj -c Release -- "C:\
 ```
 
 UI captures are written to `artifacts/ui-v1.1.2`. Display scaling is simulated in the WPF renderer; the harness does not change OS scaling or prove physical multi-monitor behavior. Hardware NVENC, real website downloads and screen readers remain device/manual checks. Portable upgrade derives both versions from the provided executables; the old helper must support in-app update mode.
+
+## Implementation foundation checks
+
+The expanded UI harness renders 14 work-area/breakpoint configurations, including
+910 x 472 and 780 x 406 DIP. It checks the first and last queue items after resize,
+and scrolls the narrow audio editor to verify the save action is reachable.
+Baseline images are retained locally in `artifacts/ui-baseline-6d99f43`; changed
+captures remain in `artifacts/ui-v1.1.2`. Both are ignored artifacts.
+
+Physical evidence and pending checks: [Manual/README.md](Manual/README.md).
+
+`PreviewEfficiencyRegression.cs` runs inside the isolated UI dispatcher. It checks
+that peak batches defer rebuilding, playhead updates preserve overlay identities,
+idle/import do not acquire an audio device, tab changes/minimizing stop preview
+timers, restoration does not auto-play, and trim readiness survives suspension.
+Timer cleanup tests start only the UI timers and state flags, so they do not
+require installed codecs, speakers, or a working physical audio output device.
+
+For a lightweight preview lifecycle check without generating the layout matrix:
+
+```powershell
+dotnet run --project Tests/MediaStudio.RegressionTests.csproj -c Release -- "C:\path\to\ffmpeg.exe" --preview-only
+```
+
+This still uses synthetic media and the actual WPF views, but skips the 14-size
+screenshot pass and unrelated encode/update scenarios. Use the full regression
+runner when changing processing, cancellation or persistence.
+
+## GPU regression checks
+
+`GpuCapabilityRegression.cs` covers missing/changed engines, cache/refresh,
+inconclusive/failed/cancelled probes, GPU-off, non-NVENC jobs, CPU fallback,
+actual encoder reporting and cancellation without retry. It includes one real
+synthetic conversion with the GPU preference enabled; GPU success is optional,
+but a nonempty successful output is required. The full suite includes these checks.
+
+```powershell
+dotnet run --project Tests/MediaStudio.RegressionTests.csproj -c Release -- "C:\path\to\ffmpeg.exe" --gpu-only
+```
+
+Probe command uses a one-frame encode and the FFmpeg null muxer, documented in
+[FFmpeg formats](https://www.ffmpeg.org/ffmpeg-formats.html#null).
+Manual NVIDIA/driver/device evidence remains separate from injected cases.
+
+## Download/safety regression modes
+
+Use the SDK pinned in global.json (10.0.403). With the project-local SDK:
+
+```powershell
+./artifacts/dotnet10/dotnet.exe build Tests/MediaStudio.RegressionTests.csproj -c Release -o artifacts/checks
+./artifacts/dotnet10/dotnet.exe artifacts/checks/MediaStudio.RegressionTests.dll artifacts/test-tools/ffmpeg.exe --safety-only
+./artifacts/dotnet10/dotnet.exe artifacts/checks/MediaStudio.RegressionTests.dll artifacts/test-tools/ffmpeg.exe --core-only
+./Tests/DependencyAudit.ps1 -Dotnet ./artifacts/dotnet10/dotnet.exe
+```
+
+--core-only runs processing/persistence/update regressions without creating a WPF
+window, input automation, dialogs or desktop interaction. --safety-only runs the
+new rollback locks, maintenance exclusion (including Home setup), integrity,
+partial-file, metadata, real resize/no-upscale/collision/cancel, preview cleanup,
+audio-only encoder and controlled child-process cancellation checks. Only the
+owned test subprocess is terminated; the user's running application is untouched.
+The no-argument-mode full regression still includes the optional WPF UI matrix.
+Do not run startup/consent GUI smoke on the user's desktop without authorization.
+
+The installer digest flow is covered with fake HTTP metadata and hash mismatch
+fixtures. Live metadata was read without downloading or replacing user engines.
+Engine digest verification uses GitHub's asset digest, not independent GPG trust.
+
+Real yt-dlp integration without external sites or UI (requires an existing verified
+engine path):
+
+```powershell
+./artifacts/dotnet10/dotnet.exe artifacts/checks/MediaStudio.RegressionTests.dll --download-local C:/path/to/yt-dlp.exe C:/path/to/ffmpeg.exe
+```
+
+This fixture serves synthetic MP4 on an ephemeral loopback-only port, exercises
+real yt-dlp metadata/download/remux plus FFmpeg resize, and removes its test data.
+It does not download personal media, play audio or open windows.

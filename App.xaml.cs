@@ -26,6 +26,7 @@ public partial class App : Application
         serviceCollection.AddSingleton<SettingsService>();
         serviceCollection.AddSingleton<DependencyService>();
         serviceCollection.AddSingleton<YtDlpService>();
+        serviceCollection.AddSingleton<GpuCapabilityService>();
         serviceCollection.AddSingleton<FFmpegService>();
         serviceCollection.AddSingleton<MediaWorkspace>();
         serviceCollection.AddSingleton<IConfirmationService, ConfirmationService>();
@@ -51,4 +52,10 @@ public partial class App : Application
         mainWindow.Show();
         UpdateBootstrapper.CompleteNormalStartup(e.Args);
     }
+    protected override void OnExit(ExitEventArgs e)
+    {
+        if (Services is IDisposable disposable) disposable.Dispose();
+        base.OnExit(e);
+    }
+
 }

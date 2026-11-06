@@ -13,17 +13,17 @@
     <ui:TextBlock TextWrapping="Wrap" Text="เลือกช่วงจากคลื่นเสียง ปรับความดัง และบันทึกเป็น MP3, WAV หรือ FLAC" Margin="0,4,0,0" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
    </StackPanel>
    <Border Grid.Row="1" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,0,0,16">
-    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-     <StackPanel><ui:TextBlock TextWrapping="Wrap" Text="{Binding FileName}" FontTypography="Subtitle" TextTrimming="CharacterEllipsis"/><ui:TextBlock Text="{Binding StatusText}" Margin="0,4,12,0" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/></StackPanel>
-     <ui:Button MinHeight="36" FocusVisualStyle="{StaticResource KeyboardFocus}" Grid.Column="1" Content="เลือกไฟล์เสียงหรือวิดีโอ..." Icon="{ui:SymbolIcon Symbol=FolderOpen24}" Command="{Binding SelectFileCommand}" Appearance="Primary" IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBooleanConverter}}"/>
-    </Grid>
+    <WrapPanel>
+     <StackPanel Width="280" Margin="0,0,12,8"><ui:TextBlock TextWrapping="Wrap" Text="{Binding FileName}" FontTypography="Subtitle" TextTrimming="CharacterEllipsis"/><ui:TextBlock Text="{Binding StatusText}" Margin="0,4,12,0" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/></StackPanel>
+     <ui:Button MinHeight="36" FocusVisualStyle="{StaticResource KeyboardFocus}" Content="เลือกไฟล์เสียงหรือวิดีโอ..." Icon="{ui:SymbolIcon Symbol=FolderOpen24}" Command="{Binding SelectFileCommand}" Appearance="Primary" IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBooleanConverter}}"/>
+    </WrapPanel>
    </Border>
    <Border Grid.Row="2" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16">
     <StackPanel>
-     <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-      <StackPanel><ui:TextBlock TextWrapping="Wrap" Text="คลื่นเสียงและช่วงที่เลือก" FontWeight="SemiBold"/><ui:TextBlock TextWrapping="Wrap" Text="คลิกเพื่อเลื่อนตำแหน่ง หรือลากเส้นเริ่มต้นและสิ้นสุด" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,3,0,0"/></StackPanel>
-      <StackPanel Grid.Column="1" Orientation="Horizontal"><ui:TextBlock TextWrapping="Wrap" Text="ซูม" VerticalAlignment="Center" Margin="0,0,8,0"/><Slider AutomationProperties.Name="ขยายเส้นเวลาเสียง" x:Name="ZoomSlider" Minimum="1" Maximum="8" Value="1" Width="140" ValueChanged="ZoomSlider_ValueChanged"/></StackPanel>
-     </Grid>
+     <WrapPanel>
+      <StackPanel Width="300" Margin="0,0,12,8"><ui:TextBlock TextWrapping="Wrap" Text="คลื่นเสียงและช่วงที่เลือก" FontWeight="SemiBold"/><ui:TextBlock TextWrapping="Wrap" Text="คลิกเพื่อเลื่อนตำแหน่ง หรือลากเส้นเริ่มต้นและสิ้นสุด" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,3,0,0"/></StackPanel>
+      <StackPanel Orientation="Horizontal"><ui:TextBlock TextWrapping="Wrap" Text="ซูม" VerticalAlignment="Center" Margin="0,0,8,0"/><Slider AutomationProperties.Name="ขยายเส้นเวลาเสียง" x:Name="ZoomSlider" Minimum="1" Maximum="8" Value="1" Width="140" ValueChanged="ZoomSlider_ValueChanged"/></StackPanel>
+     </WrapPanel>
      <ScrollViewer x:Name="WaveformScroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Margin="0,12,0,8">
       <Grid x:Name="WaveformHost" MinWidth="600" Height="230" Background="#151515" ClipToBounds="True"
             MouseLeftButtonDown="WaveformHost_MouseLeftButtonDown" MouseMove="WaveformHost_MouseMove" MouseLeftButtonUp="WaveformHost_MouseLeftButtonUp">
@@ -35,19 +35,19 @@
        </StackPanel>
       </Grid>
      </ScrollViewer>
-     <Grid Margin="0,6,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-      <StackPanel Grid.Column="0" Margin="0,0,8,0"><ui:TextBlock TextWrapping="Wrap" Text="เวลาเริ่ม (วินาที)"/><TextBox AutomationProperties.Name="เวลาเริ่มเสียงเป็นวินาที" Text="{Binding StartSeconds, UpdateSourceTrigger=PropertyChanged, StringFormat=F3}" IsEnabled="{Binding HasLoadedFile}"/></StackPanel>
-      <StackPanel Grid.Column="1" Margin="8,0"><ui:TextBlock TextWrapping="Wrap" Text="เวลาสิ้นสุด (วินาที)"/><TextBox AutomationProperties.Name="เวลาสิ้นสุดเสียงเป็นวินาที" Text="{Binding EndSeconds, UpdateSourceTrigger=PropertyChanged, StringFormat=F3}" IsEnabled="{Binding HasLoadedFile}"/></StackPanel>
-      <StackPanel Grid.Column="2" Margin="8,0"><ui:TextBlock TextWrapping="Wrap" Text="ความยาวช่วง"/><ui:TextBlock TextWrapping="Wrap" Text="{Binding SelectionDurationFormatted}" FontWeight="SemiBold" Margin="0,9,0,0"/></StackPanel>
-      <StackPanel Grid.Column="3" Margin="8,0,0,0"><ui:TextBlock TextWrapping="Wrap" Text="รูปแบบผลลัพธ์"/><ComboBox ItemsSource="{Binding OutputFormats}" SelectedItem="{Binding SelectedOutputFormat}" IsEnabled="{Binding HasLoadedFile}"/></StackPanel>
-     </Grid>
+     <WrapPanel Margin="0,6,0,12">
+      <StackPanel Width="180" Margin="0,0,8,0"><ui:TextBlock TextWrapping="Wrap" Text="เวลาเริ่ม (วินาที)"/><TextBox AutomationProperties.Name="เวลาเริ่มเสียงเป็นวินาที" Text="{Binding StartSeconds, UpdateSourceTrigger=PropertyChanged, StringFormat=F3}" IsEnabled="{Binding HasLoadedFile}"/></StackPanel>
+      <StackPanel Width="180" Margin="8,0"><ui:TextBlock TextWrapping="Wrap" Text="เวลาสิ้นสุด (วินาที)"/><TextBox AutomationProperties.Name="เวลาสิ้นสุดเสียงเป็นวินาที" Text="{Binding EndSeconds, UpdateSourceTrigger=PropertyChanged, StringFormat=F3}" IsEnabled="{Binding HasLoadedFile}"/></StackPanel>
+      <StackPanel Width="180" Margin="8,0"><ui:TextBlock TextWrapping="Wrap" Text="ความยาวช่วง"/><ui:TextBlock TextWrapping="Wrap" Text="{Binding SelectionDurationFormatted}" FontWeight="SemiBold" Margin="0,9,0,0"/></StackPanel>
+      <StackPanel Width="180" Margin="8,0,0,0"><ui:TextBlock TextWrapping="Wrap" Text="รูปแบบผลลัพธ์"/><ComboBox ItemsSource="{Binding OutputFormats}" SelectedItem="{Binding SelectedOutputFormat}" IsEnabled="{Binding HasLoadedFile}"/></StackPanel>
+     </WrapPanel>
      <Border Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="6" Padding="12" Margin="0,0,0,12">
-      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <WrapPanel>
        <StackPanel Margin="0,0,16,0"><ui:TextBlock TextWrapping="Wrap" Text="ระดับเสียง" FontWeight="SemiBold"/><ui:TextBlock TextWrapping="Wrap" Text="ฟังผลได้ทันทีและใช้ค่าเดียวกันตอนบันทึก" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/></StackPanel>
-       <Slider AutomationProperties.Name="ระดับเสียงเป็นเปอร์เซ็นต์" Grid.Column="1" Minimum="0" Maximum="200" TickFrequency="25" Value="{Binding VolumePercent}" IsEnabled="{Binding HasLoadedFile}" VerticalAlignment="Center"/>
-       <ui:TextBlock TextWrapping="Wrap" Grid.Column="2" Text="{Binding VolumeDisplay}" FontWeight="SemiBold" MinWidth="118" TextAlignment="Right" VerticalAlignment="Center" Margin="14,0"/>
-       <ui:Button MinHeight="36" FocusVisualStyle="{StaticResource KeyboardFocus}" Grid.Column="3" Content="กลับเป็น 100%" Command="{Binding ResetVolumeCommand}" IsEnabled="{Binding HasLoadedFile}"/>
-      </Grid>
+       <Slider Width="180" AutomationProperties.Name="ระดับเสียงเป็นเปอร์เซ็นต์" Minimum="0" Maximum="200" TickFrequency="25" Value="{Binding VolumePercent}" IsEnabled="{Binding HasLoadedFile}" VerticalAlignment="Center"/>
+       <ui:TextBlock TextWrapping="Wrap" Text="{Binding VolumeDisplay}" FontWeight="SemiBold" MinWidth="118" TextAlignment="Right" VerticalAlignment="Center" Margin="14,0"/>
+       <ui:Button MinHeight="36" FocusVisualStyle="{StaticResource KeyboardFocus}" Content="กลับเป็น 100%" Command="{Binding ResetVolumeCommand}" IsEnabled="{Binding HasLoadedFile}"/>
+      </WrapPanel>
      </Border>
      <views:OutputLocationView DataContext="{Binding DataContext.OutputLocation, RelativeSource={RelativeSource AncestorType=Window}}"/>
      <WrapPanel>

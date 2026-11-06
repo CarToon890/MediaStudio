@@ -20,6 +20,8 @@
     <TextBlock Text="{Binding CurrentMediaInfo.DurationFormatted, StringFormat='ความยาว {0}'}" Style="{StaticResource SecondaryText}" Margin="0,4,0,0"/>
    </StackPanel>
   </Grid>
+  <TextBlock Text="{Binding CurrentMediaInfo.SourceResolutionDisplay}" Style="{StaticResource SecondaryText}" Margin="0,0,0,8"/>
+  <TextBlock Text="เลือกต่ำกว่าต้นทาง: ลดขนาดตามที่เลือก • เลือกสูงกว่าที่มี: คงขนาดเดิม ยังไม่อัปสเกล" Style="{StaticResource SecondaryText}" Margin="0,0,0,12"/>
   <TextBlock Text="ชื่อไฟล์ที่จะบันทึก"/><ui:TextBox x:Name="FileNameTextBox" Text="{Binding OutputFileName, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="ชื่อไฟล์ที่จะบันทึก"/>
   <TextBlock Text="{Binding FileNameError}" Margin="0,4,0,0" Visibility="{Binding HasFileNameError, Converter={StaticResource BooleanToVisibilityConverter}}"/>
   <WrapPanel Margin="0,12,0,0">
@@ -32,6 +34,12 @@
   <ui:Button MinHeight="36" FocusVisualStyle="{StaticResource KeyboardFocus}" Content="เริ่มดาวน์โหลด" Appearance="Primary" Command="{Binding StartDownloadCommand}" HorizontalAlignment="Left"/>
  </StackPanel></Border>
 <Border Style="{StaticResource Surface}"><StackPanel><TextBlock Text="คิวและประวัติการดาวน์โหลด" Style="{StaticResource SectionTitle}"/><TextBlock Text="ยังไม่มีรายการดาวน์โหลด เริ่มด้วยการวางลิงก์ด้านบน" Margin="0,16" TextWrapping="Wrap" Visibility="{Binding HasDownloadItems, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>                <ListBox  ItemsSource="{Binding DownloadQueue}" Background="Transparent" BorderThickness="0" MaxHeight="560" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="MaxWidth" Value="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ScrollContentPresenter}}"/>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <Border Background="{DynamicResource ControlFillColorDefaultBrush}" CornerRadius="6" Padding="12" Margin="0,0,0,8">
@@ -49,6 +57,7 @@
                                     <!-- Title & Stats -->
                                     <StackPanel Grid.Row="0" Grid.Column="0">
                                         <ui:TextBlock TextWrapping="Wrap" Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding ResolutionSummary}" Style="{StaticResource SecondaryText}"/>
                                         <ui:TextBlock TextWrapping="Wrap" Text="{Binding StatusMessage}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />
                                     </StackPanel>
 
@@ -56,11 +65,12 @@
 <StackPanel Grid.Row="1" Grid.ColumnSpan="3" Margin="0,12,0,0">
  <TextBlock Text="{Binding OutputPath}" Style="{StaticResource SecondaryText}" Margin="0,0,0,8" Visibility="{Binding IsCompleted, Converter={StaticResource BooleanToVisibilityConverter}}"/>
  <views:ResultActionsView OpenFileCommand="{Binding DataContext.PlayItemCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" OpenFolderCommand="{Binding DataContext.OpenOutputFolderCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" SendToConverterCommand="{Binding DataContext.SendToConverterCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" SendToVideoCommand="{Binding DataContext.SendToVideoTrimmerCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" SendToAudioCommand="{Binding DataContext.SendToAudioTrimmerCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}" CanSendVideo="{Binding CanSendToVideoTrimmer}" CanSendAudio="{Binding IsCompleted}" Visibility="{Binding IsCompleted, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+ <ui:Button Content="เปิดไฟล์ต้นทางที่เก็บไว้" Command="{Binding DataContext.OpenRetainedSourceCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}" Visibility="{Binding HasRetainedSource, Converter={StaticResource BooleanToVisibilityConverter}}" HorizontalAlignment="Left" Margin="0,0,0,8" MinHeight="36" FocusVisualStyle="{StaticResource KeyboardFocus}"/>
  <WrapPanel><ui:Button MinHeight="36" FocusVisualStyle="{StaticResource KeyboardFocus}" Content="ยกเลิก" Appearance="Danger" Command="{Binding DataContext.CancelTaskCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}" Margin="0,0,8,0" Visibility="{Binding IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/><ui:Button MinHeight="36" FocusVisualStyle="{StaticResource KeyboardFocus}" Content="ลบออกจากคิว" Command="{Binding DataContext.RemoveItemCommand, RelativeSource={RelativeSource AncestorType=ListBox}}" CommandParameter="{Binding}"/></WrapPanel>
 </StackPanel>
 
                                     <!-- Progress Bar -->
-                                    <ProgressBar Grid.Row="2" Grid.ColumnSpan="2" Value="{Binding Progress}" Maximum="100" Height="6" Margin="0,8,0,0" />
+                                    <ProgressBar Grid.Row="2" Grid.ColumnSpan="2" Value="{Binding Progress}" IsIndeterminate="{Binding IsIndeterminate}" Maximum="100" Height="6" Margin="0,8,0,0" />
                                 </Grid>
                             </Border>
                         </DataTemplate>

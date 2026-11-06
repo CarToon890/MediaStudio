@@ -120,6 +120,7 @@ public class DownloaderViewModel : ObservableObject
     public IAsyncRelayCommand FetchInfoCommand { get; }
     public IAsyncRelayCommand StartDownloadCommand { get; }
     public IRelayCommand<DownloadItem> OpenOutputFolderCommand { get; }
+    public IRelayCommand<DownloadItem> OpenRetainedSourceCommand { get; }
     public IRelayCommand<DownloadItem> PlayItemCommand { get; }
     public IRelayCommand<DownloadItem> CancelTaskCommand { get; }
     public IRelayCommand<DownloadItem> RemoveItemCommand { get; }
@@ -139,6 +140,11 @@ public class DownloaderViewModel : ObservableObject
         StartDownloadCommand = new AsyncRelayCommand(StartDownloadAsync, () => HasMediaInfo && FileNameService.TryNormalizeBaseName(OutputFileName, out _, out _));
         OpenOutputFolderCommand = new RelayCommand<DownloadItem>(OpenOutputFolder);
         PlayItemCommand = new RelayCommand<DownloadItem>(PlayItem);
+        OpenRetainedSourceCommand = new RelayCommand<DownloadItem>(item =>
+        {
+            var error = ResultFileService.Open(item?.RetainedSourcePath ?? string.Empty, false);
+            if (!string.IsNullOrEmpty(error)) StatusText = error;
+        });
         CancelTaskCommand = new RelayCommand<DownloadItem>(CancelTask);
         RemoveItemCommand = new RelayCommand<DownloadItem>(RemoveItem);
         SendToConverterCommand = new RelayCommand<DownloadItem>(item => Send(item, ToolDestination.Converter));
@@ -172,6 +178,9 @@ public class DownloaderViewModel : ObservableObject
 
     private async Task FetchInfoAsync()
     {
+        if (!_dependencyService.Operations.TryBeginWork(out var operation)) { StatusText = "กำลังอัปเดตโปรแกรมหรือส่วนประกอบ กรุณารอสักครู่"; return; }
+        using var operationLease = operation;
+
         if (string.IsNullOrWhiteSpace(UrlInput))
         {
             UrlError = "กรุณาวางลิงก์วิดีโอก่อนดึงข้อมูล";
@@ -179,6 +188,7 @@ public class DownloaderViewModel : ObservableObject
             return;
         }
         var url = UrlInput.Trim();
+        if (!YtDlpService.IsWebUrl(url)) { UrlError = "กรุณาใช้ลิงก์ HTTP หรือ HTTPS ที่ถูกต้อง"; RequestUrlFocus?.Invoke(); return; }
         var revision = ++_urlRevision;
         _infoCts?.Cancel();
         using var request = new CancellationTokenSource();
@@ -218,6 +228,9 @@ public class DownloaderViewModel : ObservableObject
 
     private async Task StartDownloadAsync()
     {
+        if (!_dependencyService.Operations.TryBeginWork(out var operation)) { StatusText = "กำลังอัปเดตโปรแกรมหรือส่วนประกอบ กรุณารอสักครู่"; return; }
+        using var operationLease = operation;
+
         if (!HasMediaInfo) return;
         if (!FileNameService.TryNormalizeBaseName(OutputFileName, out var normalizedName, out var fileNameError))
         {
@@ -236,6 +249,9 @@ public class DownloaderViewModel : ObservableObject
             Quality = SelectedQuality,
             IsAudioOnly = IsAudioOnly,
             RequestedFileName = normalizedName,
+            AvailableResolutions = CurrentMediaInfo?.AvailableVideoResolutions.ToArray() ?? Array.Empty<VideoDimensions>(),
+            UseHardwareAcceleration = _settingsService.Settings.EnableHardwareAcceleration,
+            DurationSeconds = mediaDurationSeconds,
             Status = TaskState.Queued,
             StatusMessage = "รอเริ่มดาวน์โหลด...",
             Cts = cts
@@ -275,8 +291,7 @@ public class DownloaderViewModel : ObservableObject
             try
             {
                 item.Cts?.Cancel();
-                item.Status = TaskState.Cancelled;
-                item.StatusMessage = "ยกเลิกโดยผู้ใช้";
+                item.StatusMessage = "กำลังยกเลิกและคืนทรัพยากร...";
                 OnPropertyChanged(nameof(ActiveDownloadsCount));
             }
             catch { }

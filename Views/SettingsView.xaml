@@ -40,6 +40,8 @@
                             <ui:TextBlock TextWrapping="Wrap" Text="ใช้การ์ดจอช่วยประมวลผล (NVIDIA NVENC)" FontWeight="SemiBold" />
                             <ui:TextBlock TextWrapping="Wrap" Text="ใช้การ์ดจอ NVIDIA ที่รองรับเพื่อเร่งการแปลงวิดีโอ หากใช้งานไม่ได้ระบบจะเปลี่ยนไปใช้ CPU"
                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />
+                            <TextBlock Text="{Binding GpuStatus}" Style="{StaticResource SecondaryText}" Margin="0,8,8,8" AutomationProperties.LiveSetting="Polite"/>
+                            <ui:Button Content="ตรวจสอบ GPU" Command="{Binding CheckGpuCommand}" HorizontalAlignment="Left" MinHeight="36" FocusVisualStyle="{StaticResource KeyboardFocus}"/>
                         </StackPanel>
 
                         <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding EnableHardwareAcceleration}" OnContent="เปิด" OffContent="ปิด" VerticalAlignment="Center" />

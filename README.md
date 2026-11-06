@@ -1,6 +1,6 @@
 # MediaStudio
 
-แอปเดสก์ท็อปสำหรับ Windows ที่รวมการดาวน์โหลด แปลง บีบอัด และตัดไฟล์มีเดียไว้ในโปรแกรมเดียว พัฒนาด้วย C# และ .NET 9 WPF ใช้ yt-dlp สำหรับดาวน์โหลด และ FFmpeg สำหรับประมวลผลไฟล์
+แอปเดสก์ท็อปสำหรับ Windows ที่รวมการดาวน์โหลด แปลง บีบอัด และตัดไฟล์มีเดียไว้ในโปรแกรมเดียว พัฒนาด้วย C# และ .NET 10 WPF ใช้ yt-dlp สำหรับดาวน์โหลด และ FFmpeg สำหรับประมวลผลไฟล์
 
 ## ปรับปรุง UX/UI ใน v1.1.2
 
@@ -84,7 +84,7 @@
 
 ## สำหรับนักพัฒนา
 
-ต้องมี Git และ .NET 9 SDK จากนั้นรันคำสั่งใน PowerShell:
+ต้องมี Git และ .NET 10 SDK จากนั้นรันคำสั่งใน PowerShell:
 
 ```powershell
 git clone https://github.com/CarToon890/MediaStudio.git
@@ -190,3 +190,67 @@ dotnet run --project Tests/MediaStudio.RegressionTests.csproj -c Release -- "C:\
 - ดาวน์โหลดไม่ครบหรือถูกยกเลิก โดยไม่เผยแพร่ไฟล์บางส่วน ไม่แทนที่เอนจินเดิม และลองใหม่สำเร็จ
 
 ชุดทดสอบอัตโนมัติยังไม่ครอบคลุมการใช้งานหน้าจอทั้งหมด การดาวน์โหลดจากเว็บไซต์จริง หรือการเข้ารหัสด้วย NVENC บน GPU รายละเอียดเพิ่มเติมอยู่ใน [คู่มือทดสอบ](Tests/README.md)
+
+### Foundation verification
+
+The development verification workflow runs on pull requests or manual dispatch;
+it builds, runs regression/icon checks, publishes a local CI artifact for startup
+and engine-consent smoke tests, and uploads UI captures. It does not create releases.
+See [implementation progress](docs/implementation/V1_1_2_PROGRESS.md) for completed
+work and [manual DPI matrix](Tests/Manual/DPI_Matrix.md) for device checks.
+
+## Preview efficiency and device checks
+
+Preview now pauses when its tab is hidden or the window is minimized. Restoring
+the tab/window does not start playback automatically. File conversion, downloads
+and trim operations continue independently. Audio output devices are opened on
+Play, released on hiding/unloading, and reopened on the next Play request. A device
+initialization failure shows a recovery message and keeps trimming available.
+
+Waveform updates in one dispatcher turn are coalesced into a render, and hidden
+waveforms defer drawing until visible. Playhead updates reuse the existing overlay
+objects and waveform bars share a frozen brush. Foreground playback timing and
+encoding settings are unchanged; no wattage or battery-life improvement is claimed
+without physical measurement.
+
+## GPU readiness and CPU compatibility
+
+The hardware toggle is a preference. GPU readiness is checked only on demand:
+Settings > ตรวจสอบ GPU, or the first video encode requesting NVIDIA NVENC.
+A single synthetic 128x128 frame is encoded without writing a media file. There
+is no startup/background probe, network request or automatic engine download.
+Audio/GIF conversions and MKV stream copies do not probe NVIDIA hardware.
+
+Results are cached for five minutes for the current FFmpeg path, length and
+modification time. Engine changes invalidate the result. Inconclusive results
+cache for one minute. Driver/hardware changes can be rechecked immediately with
+the Settings button. Readiness does not guarantee every real input can use GPU;
+a failed GPU encode still falls back once to CPU unless cancelled. Completed
+jobs show the encoder actually used and retain the fallback explanation.
+
+## Download resolution and safety update
+
+Download now displays the highest resolution reported by the website and verifies
+actual downloaded video dimensions. Selecting a lower resolution uses a matching
+native stream where available, otherwise FFmpeg downsizes within a standard
+landscape/portrait box, preserving aspect ratio. A smaller source is kept at its
+actual size: this release does not upscale. Each job shows selected, source and
+output sizes, and original files retained after a failed/cancelled resize can be
+opened from that job. HDR resizing currently stops with an explanation and keeps
+the source; it does not silently convert HDR colors.
+
+Tool work and application/component updates now share an exclusion mechanism;
+engine rollback preserves untouched originals. Partial downloads cannot be chosen
+as completed outputs. yt-dlp runs with isolated config/plugin settings and accepts
+only HTTP(S) URLs. New engine downloads are verified against the official GitHub
+release asset SHA-256 digest before promotion or execution. Missing/mismatched
+verification data blocks installation. This does not independently verify an
+upstream maintainer's identity or replace GPG/code-signature verification.
+
+The project now targets .NET 10 LTS, pins SDK 10.0.403 in global.json/CI, uses
+packages.lock.json and the repository NuGet.Config, and audits transitive packages.
+For this workspace the SDK is available at artifacts/dotnet10/dotnet.exe; it was
+not installed over the system SDK. Restore/build with that executable, or install
+the matching SDK through your usual development setup. Third-party notices are in
+THIRD_PARTY_NOTICES.md and embedded in the executable. Binary-specific engine
+license/source-delivery checks remain required before redistribution.

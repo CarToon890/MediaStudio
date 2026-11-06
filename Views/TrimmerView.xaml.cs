@@ -8,14 +8,18 @@ namespace MediaStudio.Views;
 
 public partial class TrimmerView : UserControl
 {
-    private DispatcherTimer? _positionTimer;
+    private readonly DispatcherTimer _positionTimer = new() { Interval = TimeSpan.FromMilliseconds(200) };
     private bool _isUserSeeking;
+    private Window? _hostWindow;
 
     public TrimmerView()
     {
         InitializeComponent();
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
+        _positionTimer.Tick += PositionTimer_Tick;
+        IsVisibleChanged += (_, _) => { if (!IsVisible) PausePreview(); };
+        PreviewPlayer.MediaFailed += (_, _) => PausePreview();
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
@@ -27,25 +31,46 @@ public partial class TrimmerView : UserControl
 
             vm.RequestTogglePlay -= OnRequestTogglePlay;
             vm.RequestTogglePlay += OnRequestTogglePlay;
+            vm.PropertyChanged += ViewModelPropertyChanged;
         }
-
-        _positionTimer = new DispatcherTimer
-        {
-            Interval = TimeSpan.FromMilliseconds(200)
-        };
-        _positionTimer.Tick += PositionTimer_Tick;
+        _hostWindow = Window.GetWindow(this);
+        if (_hostWindow != null) _hostWindow.StateChanged += HostWindowStateChanged;
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
-        _positionTimer?.Stop();
+        PausePreview();
         if (DataContext is TrimmerViewModel vm)
         {
             vm.RequestSeek -= OnRequestSeek;
             vm.RequestTogglePlay -= OnRequestTogglePlay;
+            vm.PropertyChanged -= ViewModelPropertyChanged;
         }
+        if (_hostWindow != null) _hostWindow.StateChanged -= HostWindowStateChanged;
+        _hostWindow = null;
         PreviewPlayer.Stop();
         PreviewPlayer.Close();
+    }
+
+    private void HostWindowStateChanged(object? sender, EventArgs e)
+    {
+        if (_hostWindow?.WindowState == WindowState.Minimized) PausePreview();
+    }
+
+    private void ViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(TrimmerViewModel.IsPlaying) && sender is TrimmerViewModel { IsPlaying: false })
+        {
+            _positionTimer.Stop();
+            PreviewPlayer.Pause();
+        }
+    }
+
+    private void PausePreview()
+    {
+        _positionTimer.Stop();
+        PreviewPlayer.Pause();
+        if (DataContext is TrimmerViewModel vm) vm.IsPlaying = false;
     }
 
     private void OnRequestSeek(TimeSpan position)
@@ -61,7 +86,7 @@ public partial class TrimmerView : UserControl
 
     private void OnRequestTogglePlay()
     {
-        if (DataContext is not TrimmerViewModel vm) return;
+        if (DataContext is not TrimmerViewModel vm || !IsVisible || _hostWindow?.WindowState == WindowState.Minimized) return;
 
         if (vm.IsPlaying)
         {

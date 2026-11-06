@@ -1,0 +1,51 @@
+name: Verify Windows app
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.403
+      - name: Build
+        shell: pwsh
+        run: |
+          dotnet restore MediaStudio.csproj --locked-mode
+          dotnet build MediaStudio.csproj -c Release --no-restore
+      - name: Audit direct and transitive dependencies
+        shell: pwsh
+        run: ./Tests/DependencyAudit.ps1
+
+      - name: Locate FFmpeg
+        shell: pwsh
+        run: |
+          $encoder = Get-Command ffmpeg -ErrorAction SilentlyContinue
+          if (-not $encoder) {
+            choco install ffmpeg --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'FFmpeg installation failed' }
+            $encoder = Get-Command ffmpeg -ErrorAction Stop
+          }
+          "TEST_FFMPEG=$($encoder.Source)" >> $env:GITHUB_ENV
+      - name: Regression checks
+        shell: pwsh
+        run: |
+          dotnet run --project Tests/MediaStudio.RegressionTests.csproj -c Release -- "$env:TEST_FFMPEG"
+          if ($LASTEXITCODE -ne 0) { throw 'Regression checks failed' }
+          ./Tests/IconSmoke.ps1
+      - name: Publish and smoke test
+        shell: pwsh
+        run: |
+          dotnet publish MediaStudio.csproj -p:PublishProfile=win-x64 -o artifacts/verify-publish
+          if ($LASTEXITCODE -ne 0) { throw 'Publish failed' }
+          ./Tests/StartupSmoke.ps1 -AppPath artifacts/verify-publish/MediaStudio.exe -FFmpegPath "$env:TEST_FFMPEG"
+          ./Tests/EngineConsentSmoke.ps1 -AppPath artifacts/verify-publish/MediaStudio.exe
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-verification
+          path: artifacts/ui-v1.1.2

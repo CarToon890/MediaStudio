@@ -193,6 +193,9 @@ public class TrimmerViewModel : ObservableObject
 
     public async Task LoadFileAsync(string filePath)
     {
+        if (!_dependencyService.Operations.TryBeginWork(out var operation)) { StatusText = "กำลังอัปเดตโปรแกรมหรือส่วนประกอบ กรุณารอสักครู่"; return; }
+        using var operationLease = operation;
+
         if (IsTrimming) return;
         _loadCts?.Cancel();
         using var load = new CancellationTokenSource();
@@ -240,6 +243,9 @@ public class TrimmerViewModel : ObservableObject
 
     private async Task StartTrimAsync()
     {
+        if (!_dependencyService.Operations.TryBeginWork(out var operation)) { StatusText = "กำลังอัปเดตโปรแกรมหรือส่วนประกอบ กรุณารอสักครู่"; return; }
+        using var operationLease = operation;
+
         if (!CanEdit) return;
 
         if (StartSeconds < 0 || EndSeconds <= StartSeconds || EndSeconds > TotalSeconds)

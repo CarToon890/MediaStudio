@@ -22,13 +22,31 @@ public partial class AudioTrimmerView : UserControl
     private WaveOutEvent? _audioOutput;
     private DragTarget _dragTarget;
     private double _lastZoom = 1;
+    private DispatcherOperation? _redraw;
+    private bool _waveformDirty = true;
+    private Line? _playhead;
+    private Polygon? _playheadHandle;
+    private Window? _hostWindow;
+    private static readonly SolidColorBrush WaveformBrush = CreateWaveformBrush();
+
+    private static SolidColorBrush CreateWaveformBrush()
+    {
+        var brush = new SolidColorBrush(Color.FromRgb(72, 181, 238));
+        brush.Freeze();
+        return brush;
+    }
 
     public AudioTrimmerView()
     {
         InitializeComponent();
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
-        SizeChanged += (_, _) => DrawWaveform();
+        SizeChanged += (_, _) => RequestWaveformRedraw();
+        IsVisibleChanged += (_, _) =>
+        {
+            if (!IsVisible) SuspendPreview();
+            else RequestWaveformRedraw();
+        };
         _timer.Tick += (_, _) => UpdatePlaybackPosition();
     }
 
@@ -39,8 +57,9 @@ public partial class AudioTrimmerView : UserControl
         vm.RequestTogglePlay += TogglePlay;
         vm.WaveformPeaks.CollectionChanged += PeaksChanged;
         vm.PropertyChanged += ViewModelPropertyChanged;
-        if (File.Exists(vm.PreviewFilePath)) LoadPreview(vm.PreviewFilePath);
-        DrawWaveform();
+        _hostWindow = Window.GetWindow(this);
+        if (_hostWindow != null) _hostWindow.StateChanged += HostWindowStateChanged;
+        RequestWaveformRedraw();
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -53,10 +72,43 @@ public partial class AudioTrimmerView : UserControl
             vm.PropertyChanged -= ViewModelPropertyChanged;
             vm.IsPlaying = false;
         }
+        if (_hostWindow != null) _hostWindow.StateChanged -= HostWindowStateChanged;
+        _hostWindow = null;
+        SuspendPreview();
+    }
+
+    private bool CanRenderPreview => IsLoaded && IsVisible && _hostWindow?.WindowState != WindowState.Minimized;
+
+    private void HostWindowStateChanged(object? sender, EventArgs e)
+    {
+        if (_hostWindow?.WindowState == WindowState.Minimized) SuspendPreview();
+        else if (_waveformDirty) RequestWaveformRedraw();
+    }
+
+    private void SuspendPreview()
+    {
+        if (DataContext is AudioTrimmerViewModel vm) vm.IsPlaying = false;
+        _redraw?.Abort();
+        _redraw = null;
+        _dragTarget = DragTarget.None;
+        if (WaveformHost.IsMouseCaptured) WaveformHost.ReleaseMouseCapture();
         DisposePlayer();
     }
 
-    private void PeaksChanged(object? sender, NotifyCollectionChangedEventArgs e) => DrawWaveform();
+    private void PeaksChanged(object? sender, NotifyCollectionChangedEventArgs e) => RequestWaveformRedraw();
+
+    private void RequestWaveformRedraw()
+    {
+        _waveformDirty = true;
+        if (!CanRenderPreview || _redraw?.Status == DispatcherOperationStatus.Pending) return;
+        _redraw = Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(() =>
+        {
+            _redraw = null;
+            if (!CanRenderPreview) return;
+            _waveformDirty = false;
+            DrawWaveform();
+        }));
+    }
 
     private void ViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -64,17 +116,20 @@ public partial class AudioTrimmerView : UserControl
         if (e.PropertyName == nameof(AudioTrimmerViewModel.PreviewFilePath))
         {
             vm.IsPlaying = false;
-            if (File.Exists(vm.PreviewFilePath)) LoadPreview(vm.PreviewFilePath);
-            else DisposePlayer();
+            DisposePlayer(); // Open the audio device only when playback is requested.
         }
         else if (e.PropertyName == nameof(AudioTrimmerViewModel.VolumePercent) && _audioReader is not null)
             _audioReader.Volume = (float)(vm.VolumePercent / 100d);
         else if (e.PropertyName is nameof(AudioTrimmerViewModel.StartSeconds) or nameof(AudioTrimmerViewModel.EndSeconds)
                  or nameof(AudioTrimmerViewModel.CurrentPositionSeconds) or nameof(AudioTrimmerViewModel.TotalSeconds))
         {
-            DrawOverlay();
-            if (e.PropertyName == nameof(AudioTrimmerViewModel.CurrentPositionSeconds) && vm.IsPlaying)
-                KeepPlayheadVisible(vm.CurrentPositionSeconds);
+            if (!CanRenderPreview) { _waveformDirty = true; return; }
+            if (e.PropertyName == nameof(AudioTrimmerViewModel.CurrentPositionSeconds))
+            {
+                UpdatePlayhead();
+                if (vm.IsPlaying) KeepPlayheadVisible(vm.CurrentPositionSeconds);
+            }
+            else DrawOverlay();
         }
     }
 
@@ -92,6 +147,8 @@ public partial class AudioTrimmerView : UserControl
         catch
         {
             DisposePlayer();
+            if (DataContext is AudioTrimmerViewModel vm)
+                vm.StatusText = "เล่นตัวอย่างเสียงไม่ได้ ตรวจสอบอุปกรณ์เสียงแล้วลองใหม่ ยังสามารถตัดและบันทึกไฟล์ได้";
         }
     }
 
@@ -107,14 +164,25 @@ public partial class AudioTrimmerView : UserControl
 
     private void Seek(TimeSpan time)
     {
-        if (_audioReader is null) return;
-        _audioReader.CurrentTime = TimeSpan.FromSeconds(Math.Clamp(time.TotalSeconds, 0, _audioReader.TotalTime.TotalSeconds));
-        if (DataContext is AudioTrimmerViewModel vm) vm.CurrentPositionSeconds = _audioReader.CurrentTime.TotalSeconds;
+        if (DataContext is not AudioTrimmerViewModel vm) return;
+        var seconds = Math.Clamp(time.TotalSeconds, 0, vm.TotalSeconds);
+        if (_audioReader is not null)
+        {
+            _audioReader.CurrentTime = TimeSpan.FromSeconds(Math.Min(seconds, _audioReader.TotalTime.TotalSeconds));
+            seconds = _audioReader.CurrentTime.TotalSeconds;
+        }
+        vm.CurrentPositionSeconds = seconds;
     }
 
     private void TogglePlay()
     {
-        if (DataContext is not AudioTrimmerViewModel vm || !vm.HasLoadedFile || _audioOutput is null || _audioReader is null) return;
+        if (DataContext is not AudioTrimmerViewModel vm || !vm.HasLoadedFile || !CanRenderPreview) return;
+        if (_audioReader is null && File.Exists(vm.PreviewFilePath))
+        {
+            LoadPreview(vm.PreviewFilePath);
+            Seek(TimeSpan.FromSeconds(vm.CurrentPositionSeconds));
+        }
+        if (_audioOutput is null || _audioReader is null) return;
         if (vm.IsPlaying)
         {
             _audioOutput.Pause();
@@ -150,7 +218,7 @@ public partial class AudioTrimmerView : UserControl
         _lastZoom = e.NewValue;
         WaveformHost.Width = viewport * e.NewValue;
         WaveformHost.UpdateLayout();
-        DrawWaveform();
+        RequestWaveformRedraw();
         WaveformScroller.ScrollToHorizontalOffset(Math.Max(0, centerRatio * WaveformHost.Width - viewport / 2));
     }
 
@@ -173,7 +241,7 @@ public partial class AudioTrimmerView : UserControl
                 {
                     X1 = i * step, X2 = i * step,
                     Y1 = center - barHeight / 2, Y2 = center + barHeight / 2,
-                    Stroke = new SolidColorBrush(Color.FromRgb(72, 181, 238)),
+                    Stroke = WaveformBrush,
                     StrokeThickness = Math.Max(1, step * .65)
                 });
             }
@@ -214,8 +282,11 @@ public partial class AudioTrimmerView : UserControl
 
     private void DrawOverlay()
     {
-        if (WaveformOverlay is null || WaveformHost is null || DataContext is not AudioTrimmerViewModel vm || vm.TotalSeconds <= 0) return;
+        if (WaveformOverlay is null || WaveformHost is null || DataContext is not AudioTrimmerViewModel vm) return;
         WaveformOverlay.Children.Clear();
+        _playhead = null;
+        _playheadHandle = null;
+        if (vm.TotalSeconds <= 0) return;
         var width = Math.Max(WaveformHost.ActualWidth, 600);
         WaveformOverlay.Width = width;
         var startX = SecondsToX(vm.StartSeconds, width, vm.TotalSeconds);
@@ -227,10 +298,19 @@ public partial class AudioTrimmerView : UserControl
         Canvas.SetLeft(selection, startX); Canvas.SetTop(selection, 30); WaveformOverlay.Children.Add(selection);
         AddMarker(startX, Color.FromRgb(55, 200, 120), "เริ่ม");
         AddMarker(endX, Color.FromRgb(255, 167, 38), "สิ้นสุด");
-        var playhead = new Line { X1 = playX, X2 = playX, Y1 = 30, Y2 = 224, Stroke = Brushes.White, StrokeThickness = 2 };
-        WaveformOverlay.Children.Add(playhead);
-        var head = new Polygon { Points = new PointCollection { new(playX - 5, 30), new(playX + 5, 30), new(playX, 38) }, Fill = Brushes.White };
-        WaveformOverlay.Children.Add(head);
+        _playhead = new Line { X1 = playX, X2 = playX, Y1 = 30, Y2 = 224, Stroke = Brushes.White, StrokeThickness = 2 };
+        WaveformOverlay.Children.Add(_playhead);
+        _playheadHandle = new Polygon { Points = new PointCollection { new(-5, 30), new(5, 30), new(0, 38) }, Fill = Brushes.White };
+        Canvas.SetLeft(_playheadHandle, playX);
+        WaveformOverlay.Children.Add(_playheadHandle);
+    }
+
+    private void UpdatePlayhead()
+    {
+        if (_playhead is null || _playheadHandle is null || DataContext is not AudioTrimmerViewModel vm || vm.TotalSeconds <= 0) return;
+        var x = SecondsToX(vm.CurrentPositionSeconds, Math.Max(WaveformHost.ActualWidth, 600), vm.TotalSeconds);
+        _playhead.X1 = _playhead.X2 = x;
+        Canvas.SetLeft(_playheadHandle, x);
     }
 
     private void AddShade(double x, double width)

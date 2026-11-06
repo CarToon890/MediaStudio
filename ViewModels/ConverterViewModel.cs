@@ -171,6 +171,9 @@ public class ConverterViewModel : ObservableObject
 
     private async Task StartConversionAsync()
     {
+        if (!_dependencyService.Operations.TryBeginWork(out var operation)) { StatusText = "กำลังอัปเดตโปรแกรมหรือส่วนประกอบ กรุณารอสักครู่"; return; }
+        using var operationLease = operation;
+
         if (IsConverting || !ConversionList.Any(i => i.Status != TaskState.Completed && !i.IsRunning)) return;
 
         var outputFolder = _settingsService.Settings.DownloadDirectory;

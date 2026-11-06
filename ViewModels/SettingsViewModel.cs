@@ -20,6 +20,10 @@ public class SettingsViewModel : ObservableObject
     private readonly ConverterViewModel _converter;
     private readonly TrimmerViewModel _trimmer;
     private readonly AudioTrimmerViewModel _audioTrimmer;
+    private readonly GpuCapabilityService _gpuCapabilities;
+    private string _gpuStatus = "สวิตช์เป็นความต้องการใช้งาน กดตรวจสอบเพื่อดูความพร้อมล่าสุด";
+    public string GpuStatus { get => _gpuStatus; private set => SetProperty(ref _gpuStatus, value); }
+    public IAsyncRelayCommand CheckGpuCommand { get; }
     private readonly Version _currentVersion = AppUpdateService.NormalizeVersion(
         Assembly.GetExecutingAssembly().GetName().Version ?? new Version(1, 1, 0));
     private AppReleaseInfo? _latestRelease;
@@ -88,7 +92,7 @@ public class SettingsViewModel : ObservableObject
     public SettingsViewModel(SettingsService settingsService, DependencyService dependencyService,
         IConfirmationService confirmationService, IAppUpdateService appUpdateService,
         DownloaderViewModel downloader, ConverterViewModel converter, TrimmerViewModel trimmer,
-        AudioTrimmerViewModel audioTrimmer, OutputLocationViewModel? outputLocation = null)
+        AudioTrimmerViewModel audioTrimmer, OutputLocationViewModel? outputLocation = null, GpuCapabilityService? gpuCapabilities = null)
     {
         _settingsService = settingsService;
         _dependencyService = dependencyService;
@@ -98,6 +102,8 @@ public class SettingsViewModel : ObservableObject
         _converter = converter;
         _trimmer = trimmer;
         _audioTrimmer = audioTrimmer;
+        _gpuCapabilities = gpuCapabilities ?? new GpuCapabilityService();
+        CheckGpuCommand = new AsyncRelayCommand(CheckGpuAsync);
         OutputLocation = outputLocation ?? new OutputLocationViewModel(settingsService);
         settingsService.OutputDirectoryChanged += () => OnPropertyChanged(nameof(DownloadPath));
         _enableHardwareAcceleration = _settingsService.Settings.EnableHardwareAcceleration;
@@ -121,9 +127,31 @@ public class SettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(EngineActionLabel));
     }
 
+    private async Task CheckGpuAsync(CancellationToken ct)
+    {
+        if (IsAppUpdateBusy || _converter.IsConverting || _trimmer.IsTrimming || _audioTrimmer.IsBusy || _dependencyService.IsBusy)
+        {
+            GpuStatus = "กรุณารอให้งานประมวลผลเสร็จก่อนตรวจสอบ GPU";
+            return;
+        }
+        if (!_dependencyService.Operations.TryBeginWork(out var operation)) { GpuStatus = "กรุณารอให้การอัปเดตเสร็จก่อน"; return; }
+        using var operationLease = operation;
+        GpuStatus = "กำลังทดสอบการเข้ารหัสตัวอย่างขนาดเล็ก...";
+        try { GpuStatus = (await _gpuCapabilities.CheckAsync(_dependencyService.FFmpegPath, refresh: true, ct: ct)).Message; }
+        catch (OperationCanceledException) { GpuStatus = "ยกเลิกการตรวจสอบ GPU แล้ว"; }
+    }
+
     private async Task UpdateEnginesAsync()
     {
         if (IsAppUpdateBusy) return;
+        if (CheckGpuCommand.IsRunning)
+        {
+            EngineStatus = "กรุณารอให้การตรวจสอบ GPU เสร็จก่อนเปลี่ยนส่วนประกอบ";
+            return;
+        }
+        if (HasBlockingWork() || !_dependencyService.Operations.TryBeginMaintenance(out var operation))
+        { EngineStatus = "กรุณารอให้งานที่กำลังทำเสร็จก่อนอัปเดตส่วนประกอบ"; return; }
+        using var operationLease = operation;
         var refresh = _dependencyService.IsReady;
         if (!_confirmationService.ConfirmEngineDownload(refresh)) return;
         IsUpdatingEngine = true;
@@ -184,6 +212,9 @@ public class SettingsViewModel : ObservableObject
             AppUpdateStatus = "กรุณารอให้งานดาวน์โหลดหรือประมวลผลเสร็จก่อนอัปเดตโปรแกรม";
             return;
         }
+        if (!_dependencyService.Operations.TryBeginMaintenance(out var operation))
+        { AppUpdateStatus = "กรุณารอให้งานที่กำลังทำเสร็จก่อนอัปเดต"; return; }
+        using var operationLease = operation;
         if (!_appUpdateService.CanWriteToApplicationDirectory(out var writeError))
         {
             AppUpdateStatus = writeError;
@@ -227,7 +258,7 @@ public class SettingsViewModel : ObservableObject
 
     private bool HasBlockingWork() => _downloader.IsLoadingInfo || _downloader.ActiveDownloadsCount > 0 ||
         _converter.IsConverting || _converter.ActiveConversionsCount > 0 || _trimmer.IsTrimming ||
-        _audioTrimmer.IsBusy || IsUpdatingEngine || _dependencyService.IsBusy;
+        _audioTrimmer.IsBusy || IsUpdatingEngine || _dependencyService.IsBusy || CheckGpuCommand.IsRunning;
 
     internal static string MakeEngineMessageFriendly(string message)
     {

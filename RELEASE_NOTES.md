@@ -1,4 +1,6 @@
-# MediaStudio <version>
+# MediaStudio v1.1.3
+
+## v1.1.3 — ปรับปรุงการดาวน์โหลด ความเสถียร และการใช้ทรัพยากร
 
 ## v1.1.2 — ใช้งานง่ายและสม่ำเสมอ
 
@@ -52,3 +54,42 @@ Get-FileHash .\MediaStudio-<version>-win-x64.zip -Algorithm SHA256
 - Windows SmartScreen อาจแสดงคำเตือน เนื่องจากโปรแกรมยังไม่มี code-signing certificate
 
 สำหรับผู้ใช้งานทั่วไป ให้ดาวน์โหลดเฉพาะ `MediaStudio-<version>-win-x64.zip`
+
+### ความเข้ากันได้และหน้าต่าง
+
+- Window minimum constraints adapt to smaller scaled work areas and refresh after
+  DPI/display changes. Physical monitor movement remains a manual release check.
+- Audio editor controls wrap, and queue containers follow their viewport width.
+- Shared typography and spacing resources retain the existing dark appearance.
+- Added non-publishing verification CI and expanded simulated layout checks.
+
+### ลดการใช้ทรัพยากรของตัวอย่างเสียงและวิดีโอ
+
+- Pause audio/video previews when leaving the editor or minimizing; press Play
+  explicitly to resume. Background conversion, download and trim jobs continue.
+- Defer hidden waveform drawing, coalesce peak batches and reuse playhead visuals.
+- Acquire audio output only on Play, preserving seek controls before acquisition.
+- Audio device initialization failure leaves file trimming available.
+- Add hardware-independent preview lifecycle checks and a lightweight test mode.
+
+### ตรวจสอบ GPU และตัวเข้ารหัส
+
+- Validate NVENC with a tiny on-demand encode; cache readiness to avoid repeated
+  failed GPU attempts on CPU-only systems.
+- Skip probing for GPU-off, audio/GIF and stream-copy jobs.
+- Add explicit GPU diagnostics in Settings without changing the saved toggle.
+- Report the encoder used and preserve CPU fallback/cancellation behavior.
+
+### ดาวน์โหลดและความปลอดภัย
+
+- Show website/native/output video sizes; downsize larger sources when needed,
+  preserve native 854x480/portrait/wide formats, and never upscale.
+- Keep complete downloaded originals on resize failure/cancel; publish only
+  verified outputs without overwriting existing files. Ignore partial fragments.
+- Exclude new tool work while app/component updates run, including Home setup.
+- Preserve engine originals during failed rollback and stop validation children
+  on cancellation. Check SHA-256 release digests before installing engines.
+- Report actual stream encoders; audio-only MP4 avoids GPU probing. Dispose owned
+  preview files when the application service provider exits.
+- Target .NET 10 LTS, pin SDK/package graph, add live dependency audit CI and
+  third-party notice inventory. Upscaling remains a deferred backlog item.

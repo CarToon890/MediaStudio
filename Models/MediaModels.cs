@@ -80,6 +80,9 @@ public class MediaMetadata
         : Duration.ToString(@"mm\:ss");
     public string Url { get; set; } = string.Empty;
     public string Extractor { get; set; } = string.Empty;
+    public IReadOnlyList<VideoDimensions> AvailableVideoResolutions { get; init; } = Array.Empty<VideoDimensions>();
+    public string SourceResolutionDisplay => AvailableVideoResolutions.Count == 0 ? "เว็บไซต์ยังไม่ระบุความละเอียด"
+        : $"เว็บไซต์มีสูงสุด {AvailableVideoResolutions.OrderByDescending(x => (long)x.Width * x.Height).First().Display}";
 }
 
 public class DownloadItem : ObservableObject
@@ -109,8 +112,20 @@ public class DownloadItem : ObservableObject
         }
     }
 
+    public IReadOnlyList<VideoDimensions> AvailableResolutions { get; init; } = Array.Empty<VideoDimensions>();
+    public bool UseHardwareAcceleration { get; init; }
+    public double DurationSeconds { get; init; }
+    private string _resolutionSummary = string.Empty;
+    public string ResolutionSummary { get => _resolutionSummary; set => SetProperty(ref _resolutionSummary, value); }
+    public VideoDimensions? SourceDimensions { get; set; }
+    public VideoDimensions? OutputDimensions { get; set; }
+    private string _retainedSourcePath = string.Empty;
+    public string RetainedSourcePath { get => _retainedSourcePath; set { if (SetProperty(ref _retainedSourcePath, value)) OnPropertyChanged(nameof(HasRetainedSource)); } }
+    public bool HasRetainedSource => System.IO.File.Exists(RetainedSourcePath);
+
     private double _progress;
-    public double Progress { get => _progress; set => SetProperty(ref _progress, value); }
+    public double Progress { get => _progress; set { if (SetProperty(ref _progress, value)) OnPropertyChanged(nameof(IsIndeterminate)); } }
+    public bool IsIndeterminate => IsRunning && (Progress <= 0 || (Status == TaskState.Converting && DurationSeconds <= 0));
 
     private string _speed = "-- MB/s";
     public string Speed { get => _speed; set => SetProperty(ref _speed, value); }
@@ -128,12 +143,13 @@ public class DownloadItem : ObservableObject
             {
                 OnPropertyChanged(nameof(IsRunning));
                 OnPropertyChanged(nameof(IsCompleted));
+                OnPropertyChanged(nameof(IsIndeterminate));
                 OnPropertyChanged(nameof(CanSendToVideoTrimmer));
             }
         }
     }
 
-    public bool IsRunning => Status == TaskState.Downloading || Status == TaskState.FetchingInfo;
+    public bool IsRunning => Status is TaskState.Downloading or TaskState.FetchingInfo or TaskState.Converting;
     public bool IsCompleted => Status == TaskState.Completed;
     public bool CanSendToVideoTrimmer => IsCompleted && !IsAudioOnly;
 
@@ -204,6 +220,11 @@ public class ConversionItem : ObservableObject
 
     public bool IsRunning => Status == TaskState.Converting;
     public bool IsCompleted => Status == TaskState.Completed;
+
+    private string _usedEncoder = string.Empty;
+    public string UsedEncoder { get => _usedEncoder; set => SetProperty(ref _usedEncoder, value); }
+    private string _encoderNotice = string.Empty;
+    public string EncoderNotice { get => _encoderNotice; set => SetProperty(ref _encoderNotice, value); }
 
     private string _statusMessage = "พร้อมแปลงไฟล์";
     public string StatusMessage { get => _statusMessage; set => SetProperty(ref _statusMessage, value); }

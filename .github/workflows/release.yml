@@ -27,16 +27,20 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Set up .NET 9
+      - name: Set up .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 9.0.x
+          dotnet-version: 10.0.403
 
       - name: Restore and build
         shell: pwsh
         run: |
-          dotnet restore MediaStudio.csproj
+          dotnet restore MediaStudio.csproj --locked-mode
           dotnet build MediaStudio.csproj -c Release --no-restore -p:Version=$env:RELEASE_VERSION -p:AssemblyVersion="$env:RELEASE_VERSION.0" -p:FileVersion="$env:RELEASE_VERSION.0"
+
+      - name: Audit direct and transitive dependencies
+        shell: pwsh
+        run: ./Tests/DependencyAudit.ps1
 
       - name: Locate FFmpeg for regression tests
         id: ffmpeg
