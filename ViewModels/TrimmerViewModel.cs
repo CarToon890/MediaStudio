@@ -13,6 +13,7 @@ namespace MediaStudio.ViewModels;
 
 public class TrimmerViewModel : ObservableObject
 {
+
     private readonly FFmpegService _ffmpegService;
     private readonly SettingsService _settingsService;
     private readonly DependencyService _dependencyService;
@@ -31,15 +32,37 @@ public class TrimmerViewModel : ObservableObject
         } 
     }
 
-    public bool HasLoadedFile => !string.IsNullOrEmpty(SourceFilePath) && File.Exists(SourceFilePath);
+    private bool _hasAnalyzedFile;
+    public bool HasLoadedFile => _hasAnalyzedFile && File.Exists(SourceFilePath);
+    public bool CanEdit => HasLoadedFile && !IsTrimming && !IsLoading;
+    private bool _isLoading;
+    public bool IsLoading { get => _isLoading; private set { if (SetProperty(ref _isLoading, value)) RefreshReadiness(); } }
+    private CancellationTokenSource? _loadCts;
 
-    private string _fileName = string.Empty;
+    private void RefreshReadiness()
+    {
+        OnPropertyChanged(nameof(HasLoadedFile));
+        OnPropertyChanged(nameof(CanEdit));
+        OnPropertyChanged(nameof(StartTimeFormatted));
+        OnPropertyChanged(nameof(EndTimeFormatted));
+        OnPropertyChanged(nameof(TrimDurationFormatted));
+        OnPropertyChanged(nameof(CurrentPositionFormatted));
+        StartTrimCommand?.NotifyCanExecuteChanged();
+        TogglePlayCommand?.NotifyCanExecuteChanged();
+        SetStartToCurrentCommand?.NotifyCanExecuteChanged();
+        SetEndToCurrentCommand?.NotifyCanExecuteChanged();
+        SeekToStartCommand?.NotifyCanExecuteChanged();
+        SeekToEndCommand?.NotifyCanExecuteChanged();
+        SelectFileCommand?.NotifyCanExecuteChanged();
+    }
+
+    private string _fileName = "ยังไม่ได้เลือกไฟล์วิดีโอ";
     public string FileName { get => _fileName; set => SetProperty(ref _fileName, value); }
 
     private TimeSpan _totalDuration = TimeSpan.Zero;
     public TimeSpan TotalDuration { get => _totalDuration; set => SetProperty(ref _totalDuration, value); }
 
-    private double _totalSeconds = 100;
+    private double _totalSeconds;
     public double TotalSeconds { get => _totalSeconds; set => SetProperty(ref _totalSeconds, value); }
 
     private bool _isPlaying;
@@ -58,7 +81,7 @@ public class TrimmerViewModel : ObservableObject
         }
     }
 
-    public string CurrentPositionFormatted => TimeSpan.FromSeconds(CurrentPositionSeconds).ToString(@"hh\:mm\:ss\.f");
+    public string CurrentPositionFormatted => !HasLoadedFile ? "--:--:--" : TimeSpan.FromSeconds(CurrentPositionSeconds).ToString(@"hh\:mm\:ss\.f");
 
     private double _startSeconds;
     public double StartSeconds
@@ -78,7 +101,7 @@ public class TrimmerViewModel : ObservableObject
         }
     }
 
-    private double _endSeconds = 10;
+    private double _endSeconds;
     public double EndSeconds
     {
         get => _endSeconds;
@@ -93,7 +116,7 @@ public class TrimmerViewModel : ObservableObject
     }
 
     private bool _isTrimming;
-    public bool IsTrimming { get => _isTrimming; set => SetProperty(ref _isTrimming, value); }
+    public bool IsTrimming { get => _isTrimming; set { if (SetProperty(ref _isTrimming, value)) RefreshReadiness(); } }
 
     private string _statusText = "เลือกไฟล์วิดีโอเพื่อเริ่มต้นตัดคลิป";
     public string StatusText { get => _statusText; set => SetProperty(ref _statusText, value); }
@@ -113,9 +136,9 @@ public class TrimmerViewModel : ObservableObject
 
     public bool HasLastTrimmedPath => !string.IsNullOrEmpty(LastTrimmedPath);
 
-    public string StartTimeFormatted => TimeSpan.FromSeconds(StartSeconds).ToString(@"hh\:mm\:ss\.f");
-    public string EndTimeFormatted => TimeSpan.FromSeconds(EndSeconds).ToString(@"hh\:mm\:ss\.f");
-    public string TrimDurationFormatted => TimeSpan.FromSeconds(Math.Max(0, EndSeconds - StartSeconds)).ToString(@"hh\:mm\:ss\.f");
+    public string StartTimeFormatted => !HasLoadedFile ? "--:--:--" : TimeSpan.FromSeconds(StartSeconds).ToString(@"hh\:mm\:ss\.f");
+    public string EndTimeFormatted => !HasLoadedFile ? "--:--:--" : TimeSpan.FromSeconds(EndSeconds).ToString(@"hh\:mm\:ss\.f");
+    public string TrimDurationFormatted => !HasLoadedFile ? "--:--:--" : TimeSpan.FromSeconds(Math.Max(0, EndSeconds - StartSeconds)).ToString(@"hh\:mm\:ss\.f");
 
     public event Action<TimeSpan>? RequestSeek;
     public event Action? RequestTogglePlay;
@@ -139,15 +162,15 @@ public class TrimmerViewModel : ObservableObject
         _dependencyService = dependencyService;
         _workspace = workspace;
 
-        SelectFileCommand = new AsyncRelayCommand(SelectFileAsync);
-        StartTrimCommand = new AsyncRelayCommand(StartTrimAsync);
+        SelectFileCommand = new AsyncRelayCommand(SelectFileAsync, () => !IsTrimming);
+        StartTrimCommand = new AsyncRelayCommand(StartTrimAsync, () => CanEdit);
         OpenLastTrimmedFolderCommand = new RelayCommand(OpenLastTrimmedFolder);
         PlayLastTrimmedCommand = new RelayCommand(PlayLastTrimmed);
-        TogglePlayCommand = new RelayCommand(() => RequestTogglePlay?.Invoke());
-        SetStartToCurrentCommand = new RelayCommand(() => StartSeconds = CurrentPositionSeconds);
-        SetEndToCurrentCommand = new RelayCommand(() => EndSeconds = Math.Max(StartSeconds + 0.1, CurrentPositionSeconds));
-        SeekToStartCommand = new RelayCommand(() => RequestSeek?.Invoke(TimeSpan.FromSeconds(StartSeconds)));
-        SeekToEndCommand = new RelayCommand(() => RequestSeek?.Invoke(TimeSpan.FromSeconds(EndSeconds)));
+        TogglePlayCommand = new RelayCommand(() => RequestTogglePlay?.Invoke(), () => CanEdit);
+        SetStartToCurrentCommand = new RelayCommand(() => StartSeconds = CurrentPositionSeconds, () => CanEdit);
+        SetEndToCurrentCommand = new RelayCommand(() => EndSeconds = Math.Max(StartSeconds + 0.1, CurrentPositionSeconds), () => CanEdit);
+        SeekToStartCommand = new RelayCommand(() => RequestSeek?.Invoke(TimeSpan.FromSeconds(StartSeconds)), () => CanEdit);
+        SeekToEndCommand = new RelayCommand(() => RequestSeek?.Invoke(TimeSpan.FromSeconds(EndSeconds)), () => CanEdit);
         SendToConverterCommand = new RelayCommand(() => Send(ToolDestination.Converter));
         SendToAudioTrimmerCommand = new RelayCommand(() => Send(ToolDestination.AudioTrimmer));
     }
@@ -167,33 +190,56 @@ public class TrimmerViewModel : ObservableObject
 
     public async Task LoadFileAsync(string filePath)
     {
-        if (!File.Exists(filePath)) return;
-
-        SourceFilePath = filePath;
-        _workspace.Register(filePath, "ไฟล์นำเข้า");
+        if (IsTrimming) return;
+        _loadCts?.Cancel();
+        using var load = new CancellationTokenSource();
+        _loadCts = load;
+        _hasAnalyzedFile = false;
+        IsPlaying = false;
+        SourceFilePath = string.Empty;
+        TotalDuration = TimeSpan.Zero;
+        TotalSeconds = StartSeconds = EndSeconds = CurrentPositionSeconds = 0;
+        LastTrimmedPath = string.Empty;
         FileName = Path.GetFileName(filePath);
+        IsLoading = true;
+        RefreshReadiness();
         StatusText = "กำลังอ่านข้อมูลความยาววิดีโอ...";
-
-        if (!_dependencyService.IsReady)
+        try
         {
-            await _dependencyService.EnsureDependenciesAsync();
+            if (!File.Exists(filePath)) throw new IOException("ไม่พบไฟล์ต้นทาง");
+            if (!_dependencyService.IsReady && !await _dependencyService.EnsureDependenciesAsync(ct: load.Token))
+                throw new IOException("ไม่สามารถเตรียม FFmpeg ได้");
+            load.Token.ThrowIfCancellationRequested();
+            var duration = await _ffmpegService.GetDurationAsync(filePath, load.Token);
+            load.Token.ThrowIfCancellationRequested();
+            if (!ReferenceEquals(_loadCts, load)) return;
+            if (duration.TotalSeconds <= 0) throw new IOException("ไม่สามารถอ่านความยาววิดีโอได้ ไฟล์อาจเสียหายหรือไม่รองรับ");
+            TotalDuration = duration;
+            TotalSeconds = duration.TotalSeconds;
+            EndSeconds = Math.Min(10, TotalSeconds);
+            SourceFilePath = filePath;
+            _hasAnalyzedFile = true;
+            RefreshReadiness();
+            _workspace.Register(filePath, "ไฟล์นำเข้า");
+            StatusText = $"โหลดไฟล์สำเร็จ: ความยาวทั้งหมด {duration:hh\\:mm\\:ss}";
+            RequestSeek?.Invoke(TimeSpan.Zero);
         }
-
-        TotalDuration = await _ffmpegService.GetDurationAsync(filePath);
-        TotalSeconds = TotalDuration.TotalSeconds > 0 ? TotalDuration.TotalSeconds : 60;
-        StartSeconds = 0;
-        EndSeconds = TotalSeconds > 10 ? 10 : TotalSeconds;
-        CurrentPositionSeconds = 0;
-
-        StatusText = $"โหลดไฟล์สำเร็จ: ความยาวทั้งหมด {TotalDuration:hh\\:mm\\:ss}";
-        RequestSeek?.Invoke(TimeSpan.Zero);
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            if (ReferenceEquals(_loadCts, load)) StatusText = $"อ่านวิดีโอไม่สำเร็จ: {ex.Message} กรุณาเลือกไฟล์ใหม่";
+        }
+        finally
+        {
+            if (ReferenceEquals(_loadCts, load)) { _loadCts = null; IsLoading = false; RefreshReadiness(); }
+        }
     }
 
     private async Task StartTrimAsync()
     {
-        if (string.IsNullOrEmpty(SourceFilePath) || !File.Exists(SourceFilePath) || IsTrimming) return;
+        if (!CanEdit) return;
 
-        if (EndSeconds <= StartSeconds)
+        if (StartSeconds < 0 || EndSeconds <= StartSeconds || EndSeconds > TotalSeconds)
         {
             StatusText = "เวลาสิ้นสุดต้องมากกว่าเวลาเริ่มต้น";
             return;
@@ -202,25 +248,30 @@ public class TrimmerViewModel : ObservableObject
         IsTrimming = true;
         StatusText = "กำลังตัดคลิป (โหมด Lossless ความเร็วสูง)...";
 
-        var outputFolder = _settingsService.Settings.DownloadDirectory;
-        Directory.CreateDirectory(outputFolder);
-
-        var start = TimeSpan.FromSeconds(StartSeconds);
-        var end = TimeSpan.FromSeconds(EndSeconds);
-
-        var result = await _ffmpegService.LosslessTrimAsync(SourceFilePath, start, end, outputFolder);
-
-        IsTrimming = false;
-        if (result.Success)
+        try
         {
-            StatusText = "ตัดวิดีโอเสร็จสมบูรณ์";
-            LastTrimmedPath = result.OutputPath;
-            _workspace.Register(result.OutputPath, "Video Trimmer", (end - start).TotalSeconds);
+            var outputFolder = _settingsService.Settings.DownloadDirectory;
+            Directory.CreateDirectory(outputFolder);
+
+            var start = TimeSpan.FromSeconds(StartSeconds);
+            var end = TimeSpan.FromSeconds(EndSeconds);
+
+            var result = await _ffmpegService.LosslessTrimAsync(SourceFilePath, start, end, outputFolder);
+
+            if (result.Success)
+            {
+                StatusText = "ตัดวิดีโอเสร็จสมบูรณ์";
+                LastTrimmedPath = result.OutputPath;
+                _workspace.Register(result.OutputPath, "Video Trimmer", (end - start).TotalSeconds);
+            }
+            else
+            {
+                StatusText = $"ตัดวิดีโอไม่สำเร็จ: {result.ErrorMessage}";
+            }
         }
-        else
-        {
-            StatusText = $"ตัดวิดีโอไม่สำเร็จ: {result.ErrorMessage}";
-        }
+        catch (OperationCanceledException) { StatusText = "ยกเลิกการตัดวิดีโอแล้ว สามารถลองใหม่ได้"; }
+        catch (Exception ex) { StatusText = $"ตัดวิดีโอไม่สำเร็จ: {ex.Message} ตรวจสอบโฟลเดอร์บันทึกแล้วลองใหม่"; }
+        finally { IsTrimming = false; }
     }
 
     private void Send(ToolDestination destination)

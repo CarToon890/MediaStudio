@@ -23,7 +23,12 @@ try {
     Copy-Item -LiteralPath $resolvedFfmpeg -Destination (Join-Path $engineRoot "ffmpeg.exe")
     [System.IO.File]::WriteAllBytes((Join-Path $engineRoot "yt-dlp.exe"), [byte[]](0))
 
-    $process = Start-Process -FilePath $testExe -WorkingDirectory $smokeRoot -WindowStyle Hidden -PassThru
+    $start = [System.Diagnostics.ProcessStartInfo]::new($testExe)
+    $start.WorkingDirectory = $smokeRoot
+    $start.UseShellExecute = $false
+    $start.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+    $start.Environment['MEDIASTUDIO_APPDATA_DIR'] = Join-Path $smokeRoot 'appdata'
+    $process = [System.Diagnostics.Process]::Start($start)
     Start-Sleep -Seconds 3
     $process.Refresh()
     if ($process.HasExited) {

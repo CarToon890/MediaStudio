@@ -11,6 +11,7 @@ namespace MediaStudio.ViewModels;
 
 public sealed class AudioTrimmerViewModel : ObservableObject
 {
+
     private readonly FFmpegService _ffmpeg;
     private readonly SettingsService _settings;
     private readonly DependencyService _dependencies;
@@ -19,7 +20,9 @@ public sealed class AudioTrimmerViewModel : ObservableObject
 
     private string _sourceFilePath = string.Empty;
     public string SourceFilePath { get => _sourceFilePath; set { if (SetProperty(ref _sourceFilePath, value)) { OnPropertyChanged(nameof(HasLoadedFile)); OnPropertyChanged(nameof(CanTrim)); } } }
-    public bool HasLoadedFile => File.Exists(SourceFilePath);
+    private bool _hasAnalyzedFile;
+    private bool _isTrimming;
+    public bool HasLoadedFile => _hasAnalyzedFile && File.Exists(SourceFilePath);
     public bool CanTrim => HasLoadedFile && !IsBusy && EndSeconds > StartSeconds;
     private string _fileName = "ยังไม่ได้เลือกไฟล์";
     public string FileName { get => _fileName; set => SetProperty(ref _fileName, value); }
@@ -116,26 +119,37 @@ public sealed class AudioTrimmerViewModel : ObservableObject
 
     public async Task LoadFileAsync(string path)
     {
-        if (!File.Exists(path)) return;
+        if (_isTrimming) return;
         _loadCts?.Cancel();
-        _loadCts = new CancellationTokenSource();
-        SourceFilePath = path;
-        if (File.Exists(PreviewFilePath)) File.Delete(PreviewFilePath);
-        PreviewFilePath = string.Empty;
-        FileName = Path.GetFileName(path);
+        using var load = new CancellationTokenSource();
+        _loadCts = load;
         IsBusy = true;
+        _hasAnalyzedFile = false;
+        SourceFilePath = path;
+        OnPropertyChanged(nameof(HasLoadedFile));
+        OnPropertyChanged(nameof(CanTrim));
+        var previousPreview = PreviewFilePath;
+        PreviewFilePath = string.Empty; // Release the view's player before deleting its file.
+        TryDeletePreview(previousPreview);
+        FileName = Path.GetFileName(path);
         StatusText = "กำลังอ่านแทร็กเสียงและสร้างคลื่นเสียง...";
         WaveformPeaks.Clear();
         LastOutputPath = string.Empty;
-        if (!_dependencies.IsReady && !await _dependencies.EnsureDependenciesAsync(ct: _loadCts.Token))
-        {
-            IsBusy = false;
-            StatusText = "ไม่สามารถเตรียม FFmpeg ได้";
-            return;
-        }
+        TotalSeconds = .01;
+        StartSeconds = EndSeconds = CurrentPositionSeconds = 0;
+        VolumePercent = 100;
         try
         {
-            var analysis = await _ffmpeg.AnalyzeAudioAsync(path, ct: _loadCts.Token);
+            if (!File.Exists(path)) throw new IOException("ไม่พบไฟล์ต้นทาง");
+            if (!_dependencies.IsReady && !await _dependencies.EnsureDependenciesAsync(ct: load.Token))
+                throw new IOException("ไม่สามารถเตรียม FFmpeg ได้");
+            load.Token.ThrowIfCancellationRequested();
+            var analysis = await _ffmpeg.AnalyzeAudioAsync(path, ct: load.Token);
+            if (load.IsCancellationRequested || !ReferenceEquals(_loadCts, load))
+            {
+                TryDeletePreview(analysis.PreviewPath);
+                return;
+            }
             if (!analysis.Success)
             {
                 StatusText = analysis.ErrorMessage;
@@ -150,12 +164,31 @@ public sealed class AudioTrimmerViewModel : ObservableObject
             VolumePercent = 100;
             var ext = Path.GetExtension(path).TrimStart('.').ToUpperInvariant();
             SelectedOutputFormat = OutputFormats.Contains(ext) ? ext : "MP3";
+            _hasAnalyzedFile = true;
+            OnPropertyChanged(nameof(HasLoadedFile));
             _workspace.Register(path, "ไฟล์นำเข้า", TotalSeconds);
             StatusText = $"พร้อมตัดเสียง ความยาว {TimeSpan.FromSeconds(TotalSeconds).ToString(@"hh\:mm\:ss")}";
             RequestSeek?.Invoke(TimeSpan.Zero);
         }
-        catch (OperationCanceledException) { }
-        finally { IsBusy = false; }
+        catch (OperationCanceledException)
+        {
+            if (ReferenceEquals(_loadCts, load)) StatusText = "ยกเลิกการอ่านเสียงแล้ว กรุณาเลือกไฟล์ใหม่";
+        }
+        catch (Exception ex)
+        {
+            if (ReferenceEquals(_loadCts, load)) StatusText = $"อ่านเสียงไม่สำเร็จ: {ex.Message} กรุณาเลือกไฟล์ใหม่";
+        }
+        finally
+        {
+            if (ReferenceEquals(_loadCts, load)) { _loadCts = null; IsBusy = false; }
+        }
+    }
+
+    private static void TryDeletePreview(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     private async Task StartTrimAsync()
@@ -166,21 +199,27 @@ public sealed class AudioTrimmerViewModel : ObservableObject
             StatusText = "กรุณาเลือกช่วงเวลาให้ถูกต้อง";
             return;
         }
+        _isTrimming = true;
         IsBusy = true;
         StatusText = "กำลังตัดและบันทึกเสียง...";
-        var output = _settings.Settings.DownloadDirectory;
-        Directory.CreateDirectory(output);
-        var result = await _ffmpeg.TrimAudioAsync(SourceFilePath, TimeSpan.FromSeconds(StartSeconds), TimeSpan.FromSeconds(EndSeconds),
-            output, SelectedOutputFormat, VolumePercent);
-        IsBusy = false;
-        if (!result.Success)
+        try
         {
-            StatusText = $"ตัดเสียงไม่สำเร็จ: {result.ErrorMessage}";
-            return;
+            var output = _settings.Settings.DownloadDirectory;
+            Directory.CreateDirectory(output);
+            var result = await _ffmpeg.TrimAudioAsync(SourceFilePath, TimeSpan.FromSeconds(StartSeconds), TimeSpan.FromSeconds(EndSeconds),
+                output, SelectedOutputFormat, VolumePercent);
+            if (!result.Success)
+            {
+                StatusText = $"ตัดเสียงไม่สำเร็จ: {result.ErrorMessage}";
+                return;
+            }
+            LastOutputPath = result.OutputPath;
+            _workspace.Register(result.OutputPath, "Audio Trimmer", EndSeconds - StartSeconds);
+            StatusText = $"บันทึกเสียงแล้ว: {Path.GetFileName(result.OutputPath)}";
         }
-        LastOutputPath = result.OutputPath;
-        _workspace.Register(result.OutputPath, "Audio Trimmer", EndSeconds - StartSeconds);
-        StatusText = $"บันทึกเสียงแล้ว: {Path.GetFileName(result.OutputPath)}";
+        catch (OperationCanceledException) { StatusText = "ยกเลิกการตัดเสียงแล้ว สามารถลองใหม่ได้"; }
+        catch (Exception ex) { StatusText = $"ตัดเสียงไม่สำเร็จ: {ex.Message} ตรวจสอบโฟลเดอร์บันทึกแล้วลองใหม่"; }
+        finally { _isTrimming = false; IsBusy = false; }
     }
 
     private void RaiseTimeProperties()

@@ -94,7 +94,7 @@
 
                             <!-- Play/Pause Toggle -->
                             <ui:Button Grid.Column="0" Command="{Binding TogglePlayCommand}" 
-                                       IsEnabled="{Binding HasLoadedFile}" Padding="12,6" Margin="0,0,8,0">
+                                       IsEnabled="{Binding CanEdit}" Padding="12,6" Margin="0,0,8,0">
                                 <StackPanel Orientation="Horizontal">
                                     <ui:SymbolIcon Symbol="Play24" Margin="0,0,4,0" 
                                                    Visibility="{Binding IsPlaying, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
@@ -121,12 +121,12 @@
 
                             <ui:Button Grid.Column="0" Content="ตั้งเป็นจุดเริ่มต้น"
                                        Command="{Binding SetStartToCurrentCommand}" 
-                                       IsEnabled="{Binding HasLoadedFile}" 
+                                       IsEnabled="{Binding CanEdit}" 
                                        HorizontalAlignment="Stretch" Margin="0,0,4,0" />
 
                             <ui:Button Grid.Column="1" Content="ตั้งเป็นจุดสิ้นสุด"
                                        Command="{Binding SetEndToCurrentCommand}" 
-                                       IsEnabled="{Binding HasLoadedFile}" 
+                                       IsEnabled="{Binding CanEdit}" 
                                        HorizontalAlignment="Stretch" Margin="4,0,0,0" />
                         </Grid>
                     </StackPanel>
@@ -189,7 +189,7 @@
                         </Grid>
                         <Slider Minimum="0" Maximum="{Binding TotalSeconds}" Value="{Binding StartSeconds}" 
                                 ValueChanged="StartSlider_ValueChanged"
-                                TickFrequency="1" IsSnapToTickEnabled="False" IsEnabled="{Binding HasLoadedFile}" />
+                                TickFrequency="1" IsSnapToTickEnabled="False" IsEnabled="{Binding CanEdit}" />
                     </StackPanel>
 
                     <!-- Slider 2: End Time -->
@@ -204,12 +204,12 @@
                         </Grid>
                         <Slider Minimum="0" Maximum="{Binding TotalSeconds}" Value="{Binding EndSeconds}" 
                                 ValueChanged="EndSlider_ValueChanged"
-                                TickFrequency="1" IsSnapToTickEnabled="False" IsEnabled="{Binding HasLoadedFile}" />
+                                TickFrequency="1" IsSnapToTickEnabled="False" IsEnabled="{Binding CanEdit}" />
                     </StackPanel>
 
                     <!-- Options -->
                     <ui:TextBlock Grid.Row="3" Text="ตัดแบบรักษาคุณภาพเดิมโดยไม่เข้ารหัสวิดีโอใหม่"
-                                  Foreground="{DynamicResource SystemAccentColorLight2Brush}" FontWeight="SemiBold" Margin="0,0,0,16" />
+                                  Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontWeight="SemiBold" Margin="0,0,0,16" />
 
                     <!-- Status Text -->
                     <ui:TextBlock Grid.Row="4" Text="{Binding StatusText}" VerticalAlignment="Center" 
@@ -225,7 +225,7 @@
                                    Visibility="{Binding HasLastTrimmedPath, Converter={StaticResource BooleanToVisibilityConverter}}" />
                         <ui:Button Content="เริ่มตัดคลิปทันที" Appearance="Success" Icon="{ui:SymbolIcon Symbol=Cut24}"
                                    Command="{Binding StartTrimCommand}" 
-                                   IsEnabled="{Binding HasLoadedFile}" 
+                                   IsEnabled="{Binding CanEdit}" 
                                    Padding="20,10" />
                     </WrapPanel>
                 </Grid>

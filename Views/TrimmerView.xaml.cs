@@ -93,19 +93,7 @@ public partial class TrimmerView : UserControl
 
     private void PreviewPlayer_MediaOpened(object sender, RoutedEventArgs e)
     {
-        if (PreviewPlayer.NaturalDuration.HasTimeSpan && DataContext is TrimmerViewModel vm)
-        {
-            var dur = PreviewPlayer.NaturalDuration.TimeSpan;
-            if (dur.TotalSeconds > 0)
-            {
-                vm.TotalDuration = dur;
-                vm.TotalSeconds = dur.TotalSeconds;
-                if (vm.EndSeconds > dur.TotalSeconds || vm.EndSeconds <= 0)
-                {
-                    vm.EndSeconds = Math.Min(dur.TotalSeconds, 10);
-                }
-            }
-        }
+        // FFmpeg analysis owns readiness and duration; preview events cannot make a failed load ready.
     }
 
     private void PreviewPlayer_MediaEnded(object sender, RoutedEventArgs e)
@@ -120,7 +108,7 @@ public partial class TrimmerView : UserControl
 
     private void StartSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        if (DataContext is TrimmerViewModel vm && vm.HasLoadedFile)
+        if (DataContext is TrimmerViewModel vm && vm.CanEdit)
         {
             _isUserSeeking = true;
             PreviewPlayer.Position = TimeSpan.FromSeconds(e.NewValue);
@@ -130,7 +118,7 @@ public partial class TrimmerView : UserControl
 
     private void EndSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        if (DataContext is TrimmerViewModel vm && vm.HasLoadedFile)
+        if (DataContext is TrimmerViewModel vm && vm.CanEdit)
         {
             _isUserSeeking = true;
             PreviewPlayer.Position = TimeSpan.FromSeconds(e.NewValue);

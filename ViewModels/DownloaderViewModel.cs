@@ -20,7 +20,11 @@ public class DownloaderViewModel : ObservableObject
     private readonly MediaWorkspace _workspace;
 
     private string _urlInput = string.Empty;
-    public string UrlInput { get => _urlInput; set => SetProperty(ref _urlInput, value); }
+    public string UrlInput { get => _urlInput; set { if (SetProperty(ref _urlInput, value)) UrlError = string.Empty; } }
+    private string _urlError = string.Empty;
+    public string UrlError { get => _urlError; private set { if (SetProperty(ref _urlError, value)) OnPropertyChanged(nameof(HasUrlError)); } }
+    public bool HasUrlError => !string.IsNullOrEmpty(UrlError);
+    public event Action? RequestUrlFocus;
 
     private bool _isLoadingInfo;
     public bool IsLoadingInfo { get => _isLoadingInfo; set => SetProperty(ref _isLoadingInfo, value); }
@@ -144,7 +148,13 @@ public class DownloaderViewModel : ObservableObject
 
     private async Task FetchInfoAsync()
     {
-        if (string.IsNullOrWhiteSpace(UrlInput)) return;
+        if (string.IsNullOrWhiteSpace(UrlInput))
+        {
+            UrlError = "กรุณาวางลิงก์วิดีโอก่อนดึงข้อมูล";
+            RequestUrlFocus?.Invoke();
+            return;
+        }
+        UrlError = string.Empty;
 
         CurrentMediaInfo = null;
         OutputFileName = string.Empty;

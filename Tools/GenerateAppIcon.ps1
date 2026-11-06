@@ -1,5 +1,5 @@
 param(
-    [string]$SourcePath = (Join-Path $PSScriptRoot '..\Assets\MediaStudio.Cutout.png'),
+    [string]$SourcePath = (Join-Path $PSScriptRoot '..\Assets\MediaStudio.Flat.png'),
     [string]$PngPath = (Join-Path $PSScriptRoot '..\Assets\MediaStudio.png'),
     [string]$IcoPath = (Join-Path $PSScriptRoot '..\Assets\MediaStudio.ico')
 )

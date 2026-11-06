@@ -4,12 +4,21 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using MediaStudio.Models;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace MediaStudio.Services;
 
-public sealed class MediaWorkspace
+public sealed class MediaWorkspace : ObservableObject
 {
     private readonly string _historyPath;
+    private bool _historyUnreadable;
+    private string _persistenceWarning = string.Empty;
+    public string PersistenceWarning
+    {
+        get => _persistenceWarning;
+        private set { if (SetProperty(ref _persistenceWarning, value)) OnPropertyChanged(nameof(HasPersistenceWarning)); }
+    }
+    public bool HasPersistenceWarning => !string.IsNullOrEmpty(PersistenceWarning);
     public ObservableCollection<MediaAsset> Assets { get; } = new();
     public event Action<MediaAsset, ToolDestination>? TransferRequested;
 
@@ -19,14 +28,13 @@ public sealed class MediaWorkspace
     {
         if (string.IsNullOrWhiteSpace(historyPath))
         {
-            var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MediaStudio");
-            Directory.CreateDirectory(appData);
+            var appData = Environment.GetEnvironmentVariable("MEDIASTUDIO_APPDATA_DIR");
+            if (string.IsNullOrWhiteSpace(appData)) appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MediaStudio");
             _historyPath = Path.Combine(appData, "workspace.json");
         }
         else
         {
             _historyPath = historyPath;
-            Directory.CreateDirectory(Path.GetDirectoryName(historyPath)!);
         }
         Load();
     }
@@ -87,17 +95,52 @@ public sealed class MediaWorkspace
     {
         try
         {
-            if (!File.Exists(_historyPath)) return;
-            var items = JsonSerializer.Deserialize<List<MediaAsset>>(File.ReadAllText(_historyPath)) ?? new();
+            // File.Exists hides permission errors; open directly so they become visible warnings.
+            var items = JsonSerializer.Deserialize<List<MediaAsset>>(File.ReadAllText(_historyPath))
+                ?? throw new JsonException("ประวัติไม่มีรายการที่อ่านได้");
+            if (items.Any(item => item is null || string.IsNullOrWhiteSpace(item.FilePath)))
+                throw new JsonException("พบรายการประวัติที่ไม่สมบูรณ์");
             foreach (var item in items.Where(x => File.Exists(x.FilePath)).Take(50)) Assets.Add(item);
-            Save();
         }
-        catch { }
+        catch (FileNotFoundException) { }
+        catch (DirectoryNotFoundException) { }
+        catch (Exception ex)
+        {
+            _historyUnreadable = true;
+            PersistenceWarning = $"อ่านประวัติคลังงานไม่ได้: {DescribePersistenceError(ex)} เก็บประวัติเดิมไว้แล้ว งานใหม่ยังทำได้แต่จะยังไม่บันทึกประวัติ";
+        }
     }
+
+    private static string DescribePersistenceError(Exception error) => error switch
+    {
+        JsonException => "ไฟล์ประวัติเสียหายหรือมีรูปแบบไม่ถูกต้อง",
+        UnauthorizedAccessException => "ไม่มีสิทธิ์เข้าถึงไฟล์หรือโฟลเดอร์ประวัติ",
+        IOException => "เข้าถึงไฟล์หรือโฟลเดอร์ประวัติไม่ได้ กรุณาปิดโปรแกรมที่ใช้ไฟล์นี้และตรวจสอบพื้นที่ว่าง",
+        _ => "เกิดข้อผิดพลาดขณะเข้าถึงประวัติ"
+    };
 
     private void Save()
     {
-        try { File.WriteAllText(_historyPath, JsonSerializer.Serialize(Assets, new JsonSerializerOptions { WriteIndented = true })); }
-        catch { }
+        if (_historyUnreadable) return; // Never overwrite history we could not read.
+        string? temporaryPath = null;
+        try
+        {
+            var directory = Path.GetDirectoryName(Path.GetFullPath(_historyPath))!;
+            Directory.CreateDirectory(directory);
+            temporaryPath = Path.Combine(directory, $"workspace-{Guid.NewGuid():N}.partial");
+            File.WriteAllText(temporaryPath, JsonSerializer.Serialize(Assets, new JsonSerializerOptions { WriteIndented = true }));
+            File.Move(temporaryPath, _historyPath, overwrite: true);
+            PersistenceWarning = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            PersistenceWarning = $"บันทึกประวัติคลังงานไม่ได้: {DescribePersistenceError(ex)} ไฟล์ผลลัพธ์ยังเปิดใช้งานได้ ตรวจสอบสิทธิ์หรือพื้นที่จัดเก็บ";
+        }
+        finally
+        {
+            try { if (temporaryPath != null && File.Exists(temporaryPath)) File.Delete(temporaryPath); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
     }
 }

@@ -15,11 +15,13 @@ namespace MediaStudio.ViewModels;
 
 public class ConverterViewModel : ObservableObject
 {
+
     private readonly FFmpegService _ffmpegService;
     private readonly SettingsService _settingsService;
     private readonly DependencyService _dependencyService;
     private readonly MediaWorkspace _workspace;
     private CancellationTokenSource? _convertCts;
+    private readonly HashSet<ConversionItem> _observedItems = new();
 
     private string _selectedTargetFormat = "MP4";
     public string SelectedTargetFormat
@@ -44,7 +46,7 @@ public class ConverterViewModel : ObservableObject
     public int TargetSizeMb { get => _targetSizeMb; set => SetProperty(ref _targetSizeMb, value); }
 
     private bool _isConverting;
-    public bool IsConverting { get => _isConverting; set => SetProperty(ref _isConverting, value); }
+    public bool IsConverting { get => _isConverting; set { if (SetProperty(ref _isConverting, value)) StartConversionCommand?.NotifyCanExecuteChanged(); } }
 
     private string _statusText = "ลากไฟล์มาวางหรือกดเลือกไฟล์เพื่อเริ่มต้นแปลงไฟล์";
     public string StatusText { get => _statusText; set => SetProperty(ref _statusText, value); }
@@ -83,7 +85,7 @@ public class ConverterViewModel : ObservableObject
         _workspace = workspace;
 
         SelectFilesCommand = new RelayCommand(SelectFiles);
-        StartConversionCommand = new AsyncRelayCommand(StartConversionAsync);
+        StartConversionCommand = new AsyncRelayCommand(StartConversionAsync, () => !IsConverting && ConversionList.Any(i => i.Status != TaskState.Completed && !i.IsRunning));
         RemoveItemCommand = new RelayCommand<ConversionItem>(RemoveItem);
         ClearCompletedCommand = new RelayCommand(ClearCompleted);
         OpenOutputFolderCommand = new RelayCommand<ConversionItem>(OpenOutputFolder);
@@ -97,7 +99,27 @@ public class ConverterViewModel : ObservableObject
         {
             OnPropertyChanged(nameof(ActiveConversionsCount));
             OnPropertyChanged(nameof(HasConversionItems));
+            foreach (var item in _observedItems.Where(item => !ConversionList.Contains(item)).ToList())
+            {
+                item.PropertyChanged -= ItemStateChanged;
+                _observedItems.Remove(item);
+            }
+            foreach (var item in ConversionList.Where(item => !_observedItems.Contains(item)))
+            {
+                item.PropertyChanged += ItemStateChanged;
+                _observedItems.Add(item);
+            }
+            StartConversionCommand.NotifyCanExecuteChanged();
         };
+    }
+
+    private void ItemStateChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(ConversionItem.Status) or nameof(ConversionItem.IsRunning))
+        {
+            OnPropertyChanged(nameof(ActiveConversionsCount));
+            StartConversionCommand.NotifyCanExecuteChanged();
+        }
     }
 
     private void SelectFiles()
@@ -135,14 +157,6 @@ public class ConverterViewModel : ObservableObject
                     StatusMessage = "พร้อมแปลงไฟล์"
                 };
 
-                item.PropertyChanged += (s, e) =>
-                {
-                    if (e.PropertyName is nameof(ConversionItem.Status) or nameof(ConversionItem.IsRunning))
-                    {
-                        OnPropertyChanged(nameof(ActiveConversionsCount));
-                    }
-                };
-
                 ConversionList.Add(item);
                 _workspace.Register(path, "ไฟล์นำเข้า");
             }
@@ -154,7 +168,7 @@ public class ConverterViewModel : ObservableObject
 
     private async Task StartConversionAsync()
     {
-        if (ConversionList.Count == 0 || IsConverting) return;
+        if (IsConverting || !ConversionList.Any(i => i.Status != TaskState.Completed && !i.IsRunning)) return;
 
         IsConverting = true;
         StatusText = "กำลังเริ่มกระบวนการแปลงไฟล์...";

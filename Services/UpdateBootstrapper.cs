@@ -12,7 +12,8 @@ public static class UpdateBootstrapper
         Path.Combine(Path.GetTempPath(), "MediaStudio", "updates");
 
     private static string ResultFilePath { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MediaStudio", "update-result.json");
+        Environment.GetEnvironmentVariable("MEDIASTUDIO_APPDATA_DIR") is { Length: > 0 } isolatedDirectory
+            ? isolatedDirectory : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MediaStudio"), "update-result.json");
 
     public static bool IsUpdateMode(IReadOnlyList<string> arguments) => arguments.Contains("--apply-update");
 

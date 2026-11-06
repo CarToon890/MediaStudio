@@ -68,6 +68,7 @@ try
         .SetValue(settings, new AppSettings { DownloadDirectory = output, EnableHardwareAcceleration = false });
     var workspacePath = Path.Combine(root, "workspace", "history.json");
     var workspace = new MediaWorkspace(workspacePath);
+    await PatchRegression.RunAsync(root, source, ffmpeg, settings, dependency);
     var vm = new ConverterViewModel(ffmpeg, settings, dependency, workspace);
     vm.IsCompressEnabled = true;
     vm.SelectedTargetFormat = "MP3";

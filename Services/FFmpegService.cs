@@ -21,7 +21,7 @@ public class FFmpegService
         _dependencyService = dependencyService;
     }
 
-    public async Task<TimeSpan> GetDurationAsync(string inputFilePath, CancellationToken ct = default)
+    public virtual async Task<TimeSpan> GetDurationAsync(string inputFilePath, CancellationToken ct = default)
     {
         if (!File.Exists(_dependencyService.FFmpegPath) || !File.Exists(inputFilePath)) return TimeSpan.Zero;
 
@@ -235,7 +235,7 @@ public class FFmpegService
         return (exitCode == 0, lastError);
     }
 
-    public async Task<MediaOperationResult> LosslessTrimAsync(string inputFilePath, TimeSpan start, TimeSpan end, string outputFolder, CancellationToken ct = default)
+    public virtual async Task<MediaOperationResult> LosslessTrimAsync(string inputFilePath, TimeSpan start, TimeSpan end, string outputFolder, CancellationToken ct = default)
     {
         if (!File.Exists(_dependencyService.FFmpegPath) || !File.Exists(inputFilePath))
             return MediaOperationResult.Failed("ไม่พบไฟล์ต้นทางหรือเอนจิน FFmpeg");
@@ -287,7 +287,7 @@ public class FFmpegService
         }
     }
 
-    public async Task<AudioWaveformResult> AnalyzeAudioAsync(string inputFilePath, int peakCount = 900, CancellationToken ct = default)
+    public virtual async Task<AudioWaveformResult> AnalyzeAudioAsync(string inputFilePath, int peakCount = 900, CancellationToken ct = default)
     {
         if (!File.Exists(_dependencyService.FFmpegPath) || !File.Exists(inputFilePath))
             return new AudioWaveformResult { ErrorMessage = "ไม่พบไฟล์ต้นทางหรือเอนจิน FFmpeg" };
@@ -338,7 +338,7 @@ public class FFmpegService
         finally { if (File.Exists(tempPath)) File.Delete(tempPath); }
     }
 
-    public async Task<MediaOperationResult> TrimAudioAsync(string inputFilePath, TimeSpan start, TimeSpan end,
+    public virtual async Task<MediaOperationResult> TrimAudioAsync(string inputFilePath, TimeSpan start, TimeSpan end,
         string outputFolder, string outputFormat, double volumePercent = 100, CancellationToken ct = default)
     {
         if (!File.Exists(_dependencyService.FFmpegPath) || !File.Exists(inputFilePath))

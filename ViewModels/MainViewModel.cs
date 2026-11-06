@@ -16,6 +16,7 @@ public enum EngineUiState
 
 public sealed class MainViewModel : ObservableObject
 {
+    public MediaWorkspace Workspace { get; }
     public HomeViewModel HomeVm { get; }
     public DownloaderViewModel DownloaderVm { get; }
     public ConverterViewModel ConverterVm { get; }
@@ -79,6 +80,7 @@ public sealed class MainViewModel : ObservableObject
         SettingsViewModel settingsVm, DependencyService dependencies, SettingsService settings, MediaWorkspace workspace,
         IConfirmationService confirmation)
     {
+        Workspace = workspace;
         HomeVm = homeVm;
         DownloaderVm = downloaderVm;
         ConverterVm = converterVm;

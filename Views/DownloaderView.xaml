@@ -33,14 +33,14 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <Grid Grid.Row="0">
+                <StackPanel Grid.Row="0"><Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <ui:TextBox Grid.Column="0" Text="{Binding UrlInput, UpdateSourceTrigger=PropertyChanged}" 
+                    <ui:TextBox x:Name="UrlTextBox" AutomationProperties.Name="ลิงก์วิดีโอ" Grid.Column="0" Text="{Binding UrlInput, UpdateSourceTrigger=PropertyChanged}" 
                                 PlaceholderText="วางลิงก์วิดีโอที่นี่ (https://...)" 
                                 Margin="0,0,12,0" VerticalAlignment="Center">
                         <ui:TextBox.InputBindings>
@@ -55,6 +55,8 @@
                                Command="{Binding FetchInfoCommand}" VerticalAlignment="Center" />
                 </Grid>
 
+                <ui:TextBlock Text="{Binding UrlError}" Margin="0,6,0,0" Visibility="{Binding HasUrlError, Converter={StaticResource BooleanToVisibilityConverter}}" AutomationProperties.LiveSetting="Polite"/>
+                </StackPanel>
                 <!-- Status Text & Options -->
                 <Grid Grid.Row="1" Margin="0,16,0,0">
                     <Grid.ColumnDefinitions>

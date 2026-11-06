@@ -15,3 +15,5 @@ The release workflow also runs `StartupSmoke.ps1` against the published single-f
 `IconSmoke.ps1` verifies the transparent PNG and the seven embedded ICO sizes used by Explorer, the title bar, Taskbar and Alt+Tab.
 
 `EngineConsentSmoke.ps1` opens an isolated first-run copy and verifies that the confirmation flow is reached without downloading either engine before the user accepts.
+
+PatchRegression.cs covers v1.1.1 readiness, trim recovery/cancellation, concurrent audio loads, queue commands, URL feedback and corrupt/locked history. PortableUpdateSmoke.ps1 derives versions from supplied executables and holds the baseline process before its entry point to avoid modifying user data.

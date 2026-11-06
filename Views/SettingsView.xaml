@@ -75,7 +75,7 @@
                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />
                         </StackPanel>
 
-                        <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding EnableHardwareAcceleration}" VerticalAlignment="Center" />
+                        <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding EnableHardwareAcceleration}" OnContent="เปิด" OffContent="ปิด" VerticalAlignment="Center" />
                     </Grid>
                 </Border>
 
