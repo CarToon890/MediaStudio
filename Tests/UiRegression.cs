@@ -40,19 +40,28 @@ internal static class UiRegression
                     var location = new OutputLocationViewModel(settings);
                     var settingsVm = new SettingsViewModel(settings, dependency, new NoConsent(), new AppUpdateService(), downloader, converter, video, audio, location);
                     var vm = new MainViewModel(new HomeViewModel(workspace), downloader, converter, video, audio, new WorkspaceViewModel(workspace), settingsVm, dependency, settings, workspace, new NoConsent(), location);
-                    window = new MediaStudio.MainWindow(vm) { ShowActivated = false };
+                    window = new MediaStudio.MainWindow(vm) { ShowActivated = false, MaxWidth = 1040 };
                     window.Show();
                     window.Left = -30000; window.Top = -30000;
                     var capture = Directory.CreateDirectory(Path.Combine(Environment.CurrentDirectory, "artifacts", "ui-v1.1.2")).FullName;
                     var matrix = new[] { (Name: "1366-125", Width: 1092d, Height: 570d, Scale: 1.25), (Name: "1920-150", Width: 1280d, Height: 680d, Scale: 1.5), (Name: "2560-200", Width: 1280d, Height: 680d, Scale: 2d), (Name: "minimum", Width: 960d, Height: 540d, Scale: 1d) };
                     foreach (var size in matrix)
                     {
+                        // A hosted runner may clamp top-level windows to its small virtual desktop.
+                        // Verify native resize behavior against the actual width, then render the
+                        // content at the requested logical size independently of that desktop.
+                        vm.IsCompactNavigation = window.ActualWidth < 1100;
+                        window.Width = 960;
+                        await Flush();
                         window.Width = size.Width; window.Height = size.Height;
+                        await Flush();
+                        Check(vm.IsCompactNavigation == (window.ActualWidth < 1100), "Native compact navigation breakpoint");
+                        vm.IsCompactNavigation = size.Width < 1100;
                         foreach (var page in new[] { "Home", "Downloader", "Converter", "Trimmer", "AudioTrimmer", "Workspace", "Settings" })
                         {
                             vm.CurrentTab = page;
                             await Flush();
-                            Capture(window, Path.Combine(capture, size.Name + "-" + page + "-empty.png"), size.Scale);
+                            Capture(window, Path.Combine(capture, size.Name + "-" + page + "-empty.png"), size.Scale, size.Width, size.Height);
                             CheckHorizontalBounds(window);
                         }
                         Check(vm.IsCompactNavigation == (size.Width < 1100), "Compact navigation breakpoint");
@@ -74,12 +83,21 @@ internal static class UiRegression
                     converter.InputContext = video.InputContext = audio.InputContext = "เปิดจากคลังงาน • ไฟล์ผลลัพธ์ที่บันทึกไว้";
                     foreach (var size in matrix)
                     {
+                        // A hosted runner may clamp top-level windows to its small virtual desktop.
+                        // Verify native resize behavior against the actual width, then render the
+                        // content at the requested logical size independently of that desktop.
+                        vm.IsCompactNavigation = window.ActualWidth < 1100;
+                        window.Width = 960;
+                        await Flush();
                         window.Width = size.Width; window.Height = size.Height;
+                        await Flush();
+                        Check(vm.IsCompactNavigation == (window.ActualWidth < 1100), "Native compact navigation breakpoint");
+                        vm.IsCompactNavigation = size.Width < 1100;
                         foreach (var page in new[] { "Home", "Downloader", "Converter", "Trimmer", "AudioTrimmer", "Workspace", "Settings" })
                         {
                             vm.CurrentTab = page;
                             await Flush();
-                            Capture(window, Path.Combine(capture, size.Name + "-" + page + "-content.png"), size.Scale);
+                            Capture(window, Path.Combine(capture, size.Name + "-" + page + "-content.png"), size.Scale, size.Width, size.Height);
                             CheckHorizontalBounds(window);
                         }
                     }
@@ -141,10 +159,11 @@ internal static class UiRegression
             Check(bounds.Left >= -2 && bounds.Right <= root.ActualWidth + 2, $"Horizontal clipping: {control.GetType().Name} {control.Name}, {bounds}, root {root.ActualWidth}");
         }
     }
-    private static void Capture(Window window, string file, double scale)
+    private static void Capture(Window window, string file, double scale, double logicalWidth, double logicalHeight)
     {
         var root = (FrameworkElement)window.Content;
-        root.UpdateLayout();
+        root.Measure(new Size(logicalWidth, logicalHeight));
+        root.Arrange(new Rect(0, 0, logicalWidth, logicalHeight));
         var drawing = new DrawingVisual();
         using (var context = drawing.RenderOpen())
         {
