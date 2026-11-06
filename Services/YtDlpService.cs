@@ -24,7 +24,7 @@ public class YtDlpService
         _dependencyService = dependencyService;
     }
 
-    public async Task<MediaMetadata?> GetMediaInfoAsync(string url, CancellationToken ct = default)
+    public virtual async Task<MediaMetadata?> GetMediaInfoAsync(string url, CancellationToken ct = default)
     {
         if (!File.Exists(_dependencyService.YtDlpPath)) return null;
 
@@ -71,7 +71,7 @@ public class YtDlpService
         }
     }
 
-    public async Task<MediaOperationResult> DownloadAsync(DownloadItem item, string outputFolder, CancellationToken ct = default)
+    public virtual async Task<MediaOperationResult> DownloadAsync(DownloadItem item, string outputFolder, CancellationToken ct = default)
     {
         if (!File.Exists(_dependencyService.YtDlpPath))
         {

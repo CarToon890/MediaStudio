@@ -13,6 +13,8 @@ namespace MediaStudio.ViewModels;
 
 public class TrimmerViewModel : ObservableObject
 {
+    private string _inputContext = "เลือกไฟล์จากเครื่อง";
+    public string InputContext { get => _inputContext; set => SetProperty(ref _inputContext, value); }
 
     private readonly FFmpegService _ffmpegService;
     private readonly SettingsService _settingsService;
@@ -184,6 +186,7 @@ public class TrimmerViewModel : ObservableObject
 
         if (openFileDialog.ShowDialog() == true)
         {
+            InputContext = "เลือกไฟล์จากเครื่อง";
             await LoadFileAsync(openFileDialog.FileName);
         }
     }
@@ -283,44 +286,13 @@ public class TrimmerViewModel : ObservableObject
 
     private void PlayLastTrimmed()
     {
-        try
-        {
-            if (!string.IsNullOrEmpty(LastTrimmedPath) && File.Exists(LastTrimmedPath))
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = LastTrimmedPath,
-                    UseShellExecute = true
-                });
-            }
-        }
-        catch { }
+        var error = ResultFileService.Open(LastTrimmedPath, folder: false);
+        if (!string.IsNullOrEmpty(error)) StatusText = error;
     }
 
     private void OpenLastTrimmedFolder()
     {
-        try
-        {
-            if (!string.IsNullOrEmpty(LastTrimmedPath))
-            {
-                if (File.Exists(LastTrimmedPath))
-                {
-                    Process.Start("explorer.exe", $"/select,\"{LastTrimmedPath}\"");
-                    return;
-                }
-                if (Directory.Exists(LastTrimmedPath))
-                {
-                    Process.Start(new ProcessStartInfo { FileName = LastTrimmedPath, UseShellExecute = true });
-                    return;
-                }
-            }
-
-            var defaultFolder = _settingsService.Settings.DownloadDirectory;
-            if (Directory.Exists(defaultFolder))
-            {
-                Process.Start(new ProcessStartInfo { FileName = defaultFolder, UseShellExecute = true });
-            }
-        }
-        catch { }
+        var error = ResultFileService.Open(LastTrimmedPath, folder: true);
+        if (!string.IsNullOrEmpty(error)) StatusText = error;
     }
 }

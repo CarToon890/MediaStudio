@@ -20,9 +20,13 @@ public class SettingsService
     private readonly string _settingsFilePath;
     public AppSettings Settings { get; private set; }
 
-    public SettingsService()
+    public event Action? OutputDirectoryChanged;
+
+    public SettingsService() : this(null) { }
+
+    public SettingsService(string? appDataDirectory)
     {
-        var isolatedDirectory = Environment.GetEnvironmentVariable("MEDIASTUDIO_APPDATA_DIR");
+        var isolatedDirectory = appDataDirectory ?? Environment.GetEnvironmentVariable("MEDIASTUDIO_APPDATA_DIR");
         var appDataDir = !string.IsNullOrWhiteSpace(isolatedDirectory)
             ? isolatedDirectory
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MediaStudio");
@@ -47,6 +51,36 @@ public class SettingsService
         catch { }
 
         return new AppSettings();
+    }
+
+    public bool TryChangeOutputDirectory(string path, out string error)
+    {
+        error = string.Empty;
+        var previous = Settings.DownloadDirectory;
+        string? staging = null;
+        try
+        {
+            var fullPath = Path.GetFullPath(path);
+            if (!Directory.Exists(fullPath)) throw new DirectoryNotFoundException();
+            var probe = Path.Combine(fullPath, ".mediastudio-write-" + Guid.NewGuid().ToString("N"));
+            using (var stream = new FileStream(probe, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose)) { }
+            Settings.DownloadDirectory = fullPath;
+            staging = _settingsFilePath + "." + Guid.NewGuid().ToString("N") + ".partial";
+            File.WriteAllText(staging, JsonSerializer.Serialize(Settings, new JsonSerializerOptions { WriteIndented = true }));
+            File.Move(staging, _settingsFilePath, overwrite: true);
+        }
+        catch
+        {
+            Settings.DownloadDirectory = previous;
+            error = "เปลี่ยนโฟลเดอร์ไม่ได้ ตรวจสอบสิทธิ์ พื้นที่ว่าง และไฟล์ตั้งค่าที่อาจถูกใช้งานอยู่ แล้วลองใหม่";
+            return false;
+        }
+        finally
+        {
+            try { if (staging != null && File.Exists(staging)) File.Delete(staging); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+        OutputDirectoryChanged?.Invoke();
+        return true;
     }
 
     public void SaveSettings()

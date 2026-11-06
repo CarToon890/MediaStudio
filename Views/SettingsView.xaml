@@ -1,11 +1,12 @@
 <UserControl x:Class="MediaStudio.Views.SettingsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
-             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:views="clr-namespace:MediaStudio.Views"
              xmlns:viewmodels="clr-namespace:MediaStudio.ViewModels"
-             mc:Ignorable="d" 
+             mc:Ignorable="d"
              d:DataContext="{d:DesignInstance Type=viewmodels:SettingsViewModel}"
              d:DesignHeight="700" d:DesignWidth="900">
     <Grid Margin="24">
@@ -16,52 +17,18 @@
 
         <!-- Header -->
         <StackPanel Grid.Row="0" Margin="0,0,0,24">
-            <ui:TextBlock Text="การตั้งค่า" FontTypography="Title" />
-            <ui:TextBlock Text="ตั้งค่าโฟลเดอร์บันทึกไฟล์ การประมวลผล ส่วนประกอบ และการอัปเดตโปรแกรม"
+            <ui:TextBlock TextWrapping="Wrap" Text="การตั้งค่า" FontTypography="Title" />
+            <ui:TextBlock TextWrapping="Wrap" Text="ตั้งค่าโฟลเดอร์บันทึกไฟล์ การประมวลผล ส่วนประกอบ และการอัปเดตโปรแกรม"
                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,4,0,0" />
         </StackPanel>
 
         <!-- Settings Cards List -->
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <StackPanel>
-                <!-- 1. Download Path Card -->
-                <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" 
-                        CornerRadius="8" Padding="20" BorderThickness="1" 
-                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" Margin="0,0,0,16">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-
-                        <StackPanel Grid.Row="0" Margin="0,0,0,12">
-                            <ui:TextBlock Text="โฟลเดอร์ปลายทางสำหรับบันทึกไฟล์ (Output Directory)" FontWeight="SemiBold" />
-                            <ui:TextBlock Text="ไฟล์ที่ดาวน์โหลด แปลงไฟล์ หรือตัดคลิป จะถูกบันทึกไว้ในโฟลเดอร์นี้" 
-                                          Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />
-                        </StackPanel>
-
-                        <Grid Grid.Row="1">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-
-                            <ui:TextBox Grid.Column="0" Text="{Binding DownloadPath, UpdateSourceTrigger=PropertyChanged}" 
-                                        IsReadOnly="True" Margin="0,0,12,0" VerticalAlignment="Center" />
-
-                            <ui:Button Grid.Column="1" Content="เลือกโฟลเดอร์..." Icon="{ui:SymbolIcon Symbol=FolderOpen24}" 
-                                       Command="{Binding BrowseDownloadFolderCommand}" Margin="0,0,8,0" VerticalAlignment="Center" />
-
-                            <ui:Button Grid.Column="2" Content="เปิดโฟลเดอร์" Icon="{ui:SymbolIcon Symbol=Open24}" 
-                                       Command="{Binding OpenDownloadFolderCommand}" VerticalAlignment="Center" />
-                        </Grid>
-                    </Grid>
-                </Border>
-
+                <Border Style="{StaticResource Surface}"><StackPanel><TextBlock Text="โฟลเดอร์กลางสำหรับงานใหม่" Style="{StaticResource SectionTitle}"/><views:OutputLocationView DataContext="{Binding OutputLocation}"/></StackPanel></Border>
                 <!-- 2. Hardware Acceleration Card -->
-                <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" 
-                        CornerRadius="8" Padding="20" BorderThickness="1" 
+                <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                        CornerRadius="8" Padding="20" BorderThickness="1"
                         BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" Margin="0,0,0,16">
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -70,8 +37,8 @@
                         </Grid.ColumnDefinitions>
 
                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                            <ui:TextBlock Text="ใช้การ์ดจอช่วยประมวลผล (NVIDIA NVENC)" FontWeight="SemiBold" />
-                            <ui:TextBlock Text="ใช้การ์ดจอ NVIDIA ที่รองรับเพื่อเร่งการแปลงวิดีโอ หากใช้งานไม่ได้ระบบจะเปลี่ยนไปใช้ CPU"
+                            <ui:TextBlock TextWrapping="Wrap" Text="ใช้การ์ดจอช่วยประมวลผล (NVIDIA NVENC)" FontWeight="SemiBold" />
+                            <ui:TextBlock TextWrapping="Wrap" Text="ใช้การ์ดจอ NVIDIA ที่รองรับเพื่อเร่งการแปลงวิดีโอ หากใช้งานไม่ได้ระบบจะเปลี่ยนไปใช้ CPU"
                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />
                         </StackPanel>
 
@@ -80,8 +47,8 @@
                 </Border>
 
                 <!-- 3. Engine Status Card -->
-                <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" 
-                        CornerRadius="8" Padding="20" BorderThickness="1" 
+                <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                        CornerRadius="8" Padding="20" BorderThickness="1"
                         BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" Margin="0,0,0,16">
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -90,13 +57,13 @@
                         </Grid.ColumnDefinitions>
 
                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                            <ui:TextBlock Text="ส่วนประกอบสำหรับดาวน์โหลดและประมวลผลไฟล์" FontWeight="SemiBold" />
-                            <ui:TextBlock Text="{Binding EngineStatus}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />
-                            <ui:TextBlock Text="รายละเอียดทางเทคนิค: yt-dlp และ FFmpeg" Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="12" Margin="0,3,0,0" />
+                            <ui:TextBlock TextWrapping="Wrap" Text="ส่วนประกอบสำหรับดาวน์โหลดและประมวลผลไฟล์" FontWeight="SemiBold" />
+                            <ui:TextBlock TextWrapping="Wrap" Text="{Binding EngineStatus}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />
+                            <ui:TextBlock TextWrapping="Wrap" Text="รายละเอียดทางเทคนิค: yt-dlp และ FFmpeg" Foreground="{DynamicResource TextFillColorTertiaryBrush}" FontSize="12" Margin="0,3,0,0" />
                         </StackPanel>
 
-                        <ui:Button Grid.Column="1" Content="{Binding EngineActionLabel}" Icon="{ui:SymbolIcon Symbol=ArrowSync24}"
-                                   Command="{Binding UpdateEnginesCommand}" IsEnabled="{Binding IsUpdatingEngine, Converter={StaticResource InverseBooleanConverter}}" 
+                        <ui:Button MinHeight="36" FocusVisualStyle="{StaticResource KeyboardFocus}" Grid.Column="1" Content="{Binding EngineActionLabel}" Icon="{ui:SymbolIcon Symbol=ArrowSync24}"
+                                   Command="{Binding UpdateEnginesCommand}" IsEnabled="{Binding IsUpdatingEngine, Converter={StaticResource InverseBooleanConverter}}"
                                    VerticalAlignment="Center" />
                     </Grid>
                 </Border>
@@ -116,18 +83,18 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
-                                <ui:TextBlock Text="การอัปเดต MediaStudio" FontWeight="SemiBold" />
-                                <ui:TextBlock Text="{Binding CurrentVersionDisplay}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />
+                                <ui:TextBlock TextWrapping="Wrap" Text="การอัปเดต MediaStudio" FontWeight="SemiBold" />
+                                <ui:TextBlock TextWrapping="Wrap" Text="{Binding CurrentVersionDisplay}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />
                                 <ui:TextBlock Text="{Binding AppUpdateStatus}" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />
                             </StackPanel>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                <ui:Button Content="{Binding AppUpdateButtonLabel}" Icon="{ui:SymbolIcon Symbol=Search24}"
+                                <ui:Button MinHeight="36" FocusVisualStyle="{StaticResource KeyboardFocus}" Content="{Binding AppUpdateButtonLabel}" Icon="{ui:SymbolIcon Symbol=Search24}"
                                            Command="{Binding CheckAppUpdateCommand}"
                                            IsEnabled="{Binding IsAppUpdateBusy, Converter={StaticResource InverseBooleanConverter}}" />
-                                <ui:Button Content="ดูรายละเอียด" Icon="{ui:SymbolIcon Symbol=Open24}"
+                                <ui:Button MinHeight="36" FocusVisualStyle="{StaticResource KeyboardFocus}" Content="ดูรายละเอียด" Icon="{ui:SymbolIcon Symbol=Open24}"
                                            Command="{Binding OpenLatestReleaseCommand}" Margin="8,0,0,0"
                                            Visibility="{Binding IsAppUpdateAvailable, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                <ui:Button Content="อัปเดตตอนนี้" Icon="{ui:SymbolIcon Symbol=ArrowDownload24}"
+                                <ui:Button MinHeight="36" FocusVisualStyle="{StaticResource KeyboardFocus}" Content="อัปเดตตอนนี้" Icon="{ui:SymbolIcon Symbol=ArrowDownload24}"
                                            Command="{Binding ApplyAppUpdateCommand}" Appearance="Primary" Margin="8,0,0,0"
                                            IsEnabled="{Binding IsAppUpdateBusy, Converter={StaticResource InverseBooleanConverter}}"
                                            Visibility="{Binding CanAutoUpdate, Converter={StaticResource BooleanToVisibilityConverter}}" />
@@ -139,12 +106,12 @@
                 </Border>
 
                 <!-- 5. About App Card -->
-                <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" 
-                        CornerRadius="8" Padding="20" BorderThickness="1" 
+                <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                        CornerRadius="8" Padding="20" BorderThickness="1"
                         BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
                     <StackPanel>
-                    <ui:TextBlock Text="{Binding AppVersion}" FontWeight="SemiBold" />
-                        <ui:TextBlock Text="พัฒนาด้วย .NET 9.0, C#, WPF-UI Fluent Design, yt-dlp และ FFmpeg" 
+                    <ui:TextBlock TextWrapping="Wrap" Text="{Binding AppVersion}" FontWeight="SemiBold" />
+                        <ui:TextBlock TextWrapping="Wrap" Text="พัฒนาด้วย .NET 9.0, C#, WPF-UI Fluent Design, yt-dlp และ FFmpeg"
                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />
                     </StackPanel>
                 </Border>

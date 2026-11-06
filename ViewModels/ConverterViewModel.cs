@@ -15,6 +15,8 @@ namespace MediaStudio.ViewModels;
 
 public class ConverterViewModel : ObservableObject
 {
+    private string _inputContext = "เลือกไฟล์จากเครื่อง";
+    public string InputContext { get => _inputContext; set => SetProperty(ref _inputContext, value); }
 
     private readonly FFmpegService _ffmpegService;
     private readonly SettingsService _settingsService;
@@ -132,6 +134,7 @@ public class ConverterViewModel : ObservableObject
 
         if (openFileDialog.ShowDialog() == true)
         {
+            InputContext = "เลือกไฟล์จากเครื่อง";
             AddFiles(openFileDialog.FileNames);
         }
     }
@@ -170,6 +173,7 @@ public class ConverterViewModel : ObservableObject
     {
         if (IsConverting || !ConversionList.Any(i => i.Status != TaskState.Completed && !i.IsRunning)) return;
 
+        var outputFolder = _settingsService.Settings.DownloadDirectory;
         IsConverting = true;
         StatusText = "กำลังเริ่มกระบวนการแปลงไฟล์...";
         using var batchCts = new CancellationTokenSource();
@@ -193,7 +197,6 @@ public class ConverterViewModel : ObservableObject
             }
 
             batchCts.Token.ThrowIfCancellationRequested();
-            var outputFolder = _settingsService.Settings.DownloadDirectory;
             Directory.CreateDirectory(outputFolder);
             var useNvenc = _settingsService.Settings.EnableHardwareAcceleration;
 
@@ -243,18 +246,8 @@ public class ConverterViewModel : ObservableObject
 
     private void PlayItem(ConversionItem? item)
     {
-        try
-        {
-            if (item != null && !string.IsNullOrEmpty(item.OutputPath) && File.Exists(item.OutputPath))
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = item.OutputPath,
-                    UseShellExecute = true
-                });
-            }
-        }
-        catch { }
+        var error = ResultFileService.Open(item?.OutputPath ?? string.Empty, folder: false);
+        if (!string.IsNullOrEmpty(error)) { StatusText = error; if (item != null) item.StatusMessage = error; }
     }
 
     private void CancelTask(ConversionItem? item)
@@ -307,29 +300,8 @@ public class ConverterViewModel : ObservableObject
 
     private void OpenOutputFolder(ConversionItem? item)
     {
-        try
-        {
-            if (item != null && !string.IsNullOrEmpty(item.OutputPath))
-            {
-                if (File.Exists(item.OutputPath))
-                {
-                    Process.Start("explorer.exe", $"/select,\"{item.OutputPath}\"");
-                    return;
-                }
-                if (Directory.Exists(item.OutputPath))
-                {
-                    Process.Start(new ProcessStartInfo { FileName = item.OutputPath, UseShellExecute = true });
-                    return;
-                }
-            }
-
-            var defaultFolder = _settingsService.Settings.DownloadDirectory;
-            if (Directory.Exists(defaultFolder))
-            {
-                Process.Start(new ProcessStartInfo { FileName = defaultFolder, UseShellExecute = true });
-            }
-        }
-        catch { }
+        var error = ResultFileService.Open(item?.OutputPath ?? string.Empty, folder: true);
+        if (!string.IsNullOrEmpty(error)) { StatusText = error; if (item != null) item.StatusMessage = error; }
     }
 
     private void Send(ConversionItem? item, ToolDestination destination)

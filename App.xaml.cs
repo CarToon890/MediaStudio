@@ -32,6 +32,7 @@ public partial class App : Application
         serviceCollection.AddSingleton<IAppUpdateService, AppUpdateService>();
 
         // Register ViewModels
+        serviceCollection.AddSingleton<OutputLocationViewModel>();
         serviceCollection.AddSingleton<MainViewModel>();
         serviceCollection.AddSingleton<DownloaderViewModel>();
         serviceCollection.AddSingleton<ConverterViewModel>();

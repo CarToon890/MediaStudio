@@ -19,8 +19,27 @@ public class DownloaderViewModel : ObservableObject
     private readonly DependencyService _dependencyService;
     private readonly MediaWorkspace _workspace;
 
+    private long _urlRevision;
+    private string _fetchedUrl = string.Empty;
+    private CancellationTokenSource? _infoCts;
     private string _urlInput = string.Empty;
-    public string UrlInput { get => _urlInput; set { if (SetProperty(ref _urlInput, value)) UrlError = string.Empty; } }
+    public string UrlInput
+    {
+        get => _urlInput;
+        set
+        {
+            if (!SetProperty(ref _urlInput, value)) return;
+            _urlRevision++;
+            _infoCts?.Cancel();
+            CurrentMediaInfo = null;
+            _fetchedUrl = string.Empty;
+            IsLoadingInfo = false;
+            OutputFileName = string.Empty;
+            FileNameError = UrlError = string.Empty;
+            StatusText = "วางลิงก์แล้วกดดึงข้อมูลเพื่อตรวจชื่อและคุณภาพ";
+            StartDownloadCommand?.NotifyCanExecuteChanged();
+        }
+    }
     private string _urlError = string.Empty;
     public string UrlError { get => _urlError; private set { if (SetProperty(ref _urlError, value)) OnPropertyChanged(nameof(HasUrlError)); } }
     public bool HasUrlError => !string.IsNullOrEmpty(UrlError);
@@ -38,11 +57,16 @@ public class DownloaderViewModel : ObservableObject
             if (SetProperty(ref _currentMediaInfo, value))
             {
                 OnPropertyChanged(nameof(HasMediaInfo));
+                OnPropertyChanged(nameof(HasThumbnail));
+                OnPropertyChanged(nameof(HasAuthor));
+                StartDownloadCommand?.NotifyCanExecuteChanged();
             }
         }
     }
 
-    public bool HasMediaInfo => CurrentMediaInfo != null;
+    public bool HasThumbnail => !string.IsNullOrWhiteSpace(CurrentMediaInfo?.ThumbnailUrl);
+    public bool HasAuthor => !string.IsNullOrWhiteSpace(CurrentMediaInfo?.Author);
+    public bool HasMediaInfo => CurrentMediaInfo != null && _fetchedUrl == UrlInput.Trim();
 
     private string _selectedQuality = "1080p";
     public string SelectedQuality { get => _selectedQuality; set => SetProperty(ref _selectedQuality, value); }
@@ -71,7 +95,7 @@ public class DownloaderViewModel : ObservableObject
     }
 
     private string _fileNameError = string.Empty;
-    public string FileNameError { get => _fileNameError; set { if (SetProperty(ref _fileNameError, value)) OnPropertyChanged(nameof(HasFileNameError)); } }
+    public string FileNameError { get => _fileNameError; set { if (SetProperty(ref _fileNameError, value)) { OnPropertyChanged(nameof(HasFileNameError)); StartDownloadCommand?.NotifyCanExecuteChanged(); } } }
     public bool HasFileNameError => !string.IsNullOrEmpty(FileNameError);
     public string OutputExtension => IsAudioOnly ? ".mp3" : ".mp4";
 
@@ -111,8 +135,8 @@ public class DownloaderViewModel : ObservableObject
         _workspace = workspace;
 
         PasteClipboardCommand = new AsyncRelayCommand(PasteClipboardAsync);
-        FetchInfoCommand = new AsyncRelayCommand(FetchInfoAsync);
-        StartDownloadCommand = new AsyncRelayCommand(StartDownloadAsync);
+        FetchInfoCommand = new AsyncRelayCommand(FetchInfoAsync, AsyncRelayCommandOptions.AllowConcurrentExecutions);
+        StartDownloadCommand = new AsyncRelayCommand(StartDownloadAsync, () => HasMediaInfo && FileNameService.TryNormalizeBaseName(OutputFileName, out _, out _));
         OpenOutputFolderCommand = new RelayCommand<DownloadItem>(OpenOutputFolder);
         PlayItemCommand = new RelayCommand<DownloadItem>(PlayItem);
         CancelTaskCommand = new RelayCommand<DownloadItem>(CancelTask);
@@ -154,52 +178,54 @@ public class DownloaderViewModel : ObservableObject
             RequestUrlFocus?.Invoke();
             return;
         }
+        var url = UrlInput.Trim();
+        var revision = ++_urlRevision;
+        _infoCts?.Cancel();
+        using var request = new CancellationTokenSource();
+        _infoCts = request;
         UrlError = string.Empty;
-
         CurrentMediaInfo = null;
         OutputFileName = string.Empty;
         IsLoadingInfo = true;
         StatusText = "กำลังดึงข้อมูลวิดีโอ...";
-
         try
         {
-            if (!_dependencyService.IsReady)
-            {
-                StatusText = "กำลังตรวจสอบเอนจิน...";
-                await _dependencyService.EnsureDependenciesAsync();
-            }
-
-            var info = await _ytDlpService.GetMediaInfoAsync(UrlInput);
+            if (!_dependencyService.IsReady && !await _dependencyService.EnsureDependenciesAsync(ct: request.Token))
+                throw new IOException("เตรียมระบบดาวน์โหลดไม่ได้ กรุณาลองใหม่");
+            request.Token.ThrowIfCancellationRequested();
+            var info = await _ytDlpService.GetMediaInfoAsync(url, request.Token);
+            if (revision != _urlRevision || request.IsCancellationRequested) return;
             if (info != null)
             {
+                _fetchedUrl = url;
                 CurrentMediaInfo = info;
                 OutputFileName = FileNameService.SanitizeSuggestedName(info.Title);
-                StatusText = $"พบข้อมูล: {info.Title}";
+                StatusText = "ตรวจชื่อไฟล์ คุณภาพ และโฟลเดอร์ปลายทาง แล้วเริ่มดาวน์โหลด";
+                StartDownloadCommand.NotifyCanExecuteChanged();
             }
-            else
-            {
-                StatusText = "ไม่สามารถดึงข้อมูลได้ โปรดตรวจสอบลิงก์อีกครั้ง";
-            }
+            else StatusText = "ดึงข้อมูลไม่ได้ ตรวจสอบลิงก์และอินเทอร์เน็ตแล้วลองใหม่";
         }
-        catch (Exception ex)
+        catch (OperationCanceledException) { }
+        catch (Exception)
         {
-            StatusText = $"เกิดข้อผิดพลาด: {ex.Message}";
+            if (revision == _urlRevision) StatusText = "ดึงข้อมูลไม่ได้ ตรวจสอบลิงก์และอินเทอร์เน็ตแล้วลองใหม่";
         }
         finally
         {
-            IsLoadingInfo = false;
+            if (ReferenceEquals(_infoCts, request)) { _infoCts = null; IsLoadingInfo = false; }
         }
     }
 
     private async Task StartDownloadAsync()
     {
-        if (string.IsNullOrWhiteSpace(UrlInput)) return;
+        if (!HasMediaInfo) return;
         if (!FileNameService.TryNormalizeBaseName(OutputFileName, out var normalizedName, out var fileNameError))
         {
             FileNameError = fileNameError;
             return;
         }
 
+        var outputFolder = _settingsService.Settings.DownloadDirectory;
         var cts = new CancellationTokenSource();
         var mediaDurationSeconds = CurrentMediaInfo?.Duration.TotalSeconds ?? 0;
         var downloadItem = new DownloadItem
@@ -225,32 +251,21 @@ public class DownloaderViewModel : ObservableObject
 
         DownloadQueue.Insert(0, downloadItem);
         OnPropertyChanged(nameof(ActiveDownloadsCount));
-        UrlInput = string.Empty;
-        CurrentMediaInfo = null;
-        OutputFileName = string.Empty;
-
-        var outputFolder = _settingsService.Settings.DownloadDirectory;
-        Directory.CreateDirectory(outputFolder);
-
-        var result = await _ytDlpService.DownloadAsync(downloadItem, outputFolder, cts.Token);
-        if (result.Success) _workspace.Register(result.OutputPath, "Downloader", mediaDurationSeconds);
-        OnPropertyChanged(nameof(ActiveDownloadsCount));
+        try
+        {
+            Directory.CreateDirectory(outputFolder);
+            var result = await _ytDlpService.DownloadAsync(downloadItem, outputFolder, cts.Token);
+            if (result.Success) _workspace.Register(result.OutputPath, "Downloader", mediaDurationSeconds);
+        }
+        catch (OperationCanceledException) { downloadItem.Status = TaskState.Cancelled; downloadItem.StatusMessage = "ยกเลิกแล้ว"; }
+        catch { downloadItem.Status = TaskState.Failed; downloadItem.StatusMessage = "ดาวน์โหลดไม่ได้ ตรวจสอบโฟลเดอร์บันทึกและลองใหม่"; }
+        finally { downloadItem.Cts = null; cts.Dispose(); OnPropertyChanged(nameof(ActiveDownloadsCount)); }
     }
 
     private void PlayItem(DownloadItem? item)
     {
-        try
-        {
-            if (item != null && !string.IsNullOrEmpty(item.OutputPath) && File.Exists(item.OutputPath))
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = item.OutputPath,
-                    UseShellExecute = true
-                });
-            }
-        }
-        catch { }
+        var error = ResultFileService.Open(item?.OutputPath ?? string.Empty, folder: false);
+        if (!string.IsNullOrEmpty(error)) { StatusText = error; if (item != null) item.StatusMessage = error; }
     }
 
     private void CancelTask(DownloadItem? item)
@@ -270,29 +285,8 @@ public class DownloaderViewModel : ObservableObject
 
     private void OpenOutputFolder(DownloadItem? item)
     {
-        try
-        {
-            if (item != null && !string.IsNullOrEmpty(item.OutputPath))
-            {
-                if (File.Exists(item.OutputPath))
-                {
-                    Process.Start("explorer.exe", $"/select,\"{item.OutputPath}\"");
-                    return;
-                }
-                if (Directory.Exists(item.OutputPath))
-                {
-                    Process.Start(new ProcessStartInfo { FileName = item.OutputPath, UseShellExecute = true });
-                    return;
-                }
-            }
-
-            var defaultFolder = _settingsService.Settings.DownloadDirectory;
-            if (Directory.Exists(defaultFolder))
-            {
-                Process.Start(new ProcessStartInfo { FileName = defaultFolder, UseShellExecute = true });
-            }
-        }
-        catch { }
+        var error = ResultFileService.Open(item?.OutputPath ?? string.Empty, folder: true);
+        if (!string.IsNullOrEmpty(error)) { StatusText = error; if (item != null) item.StatusMessage = error; }
     }
 
     private void RemoveItem(DownloadItem? item)

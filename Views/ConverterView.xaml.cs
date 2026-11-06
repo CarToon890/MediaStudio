@@ -27,6 +27,7 @@ public partial class ConverterView : UserControl
             var files = (string[])e.Data.GetData(DataFormats.FileDrop);
             if (files != null && DataContext is ConverterViewModel vm)
             {
+                vm.InputContext = "ลากไฟล์จากเครื่อง";
                 vm.AddFiles(files);
             }
         }

@@ -12,7 +12,7 @@ using MediaStudio.Services;
 using MediaStudio.ViewModels;
 
 // Dependency-free integration checks. Pass the path to an installed FFmpeg executable.
-if (args.Length != 1 || !File.Exists(args[0]))
+if (args.Length is < 1 or > 2 || !File.Exists(args[0]) || (args.Length == 2 && args[1] != "--ui-only"))
     throw new ArgumentException("Pass the full path to ffmpeg.exe.");
 var ffmpegPath = Path.GetFullPath(args[0]);
 var root = Path.Combine(Path.GetTempPath(), "MediaStudio-tests-" + Guid.NewGuid().ToString("N"));
@@ -35,6 +35,11 @@ try
         Check(process.ExitCode == 0, "Generate media: " + error);
     }
 
+    if (args.Length == 2)
+    {
+        await UiRegression.RunAsync(root, source, dependency);
+        return;
+    }
     var output = Path.Combine(root, "output");
     Directory.CreateDirectory(output);
     var existing = Path.Combine(output, "clip_converted.mp4");
@@ -69,6 +74,11 @@ try
     var workspacePath = Path.Combine(root, "workspace", "history.json");
     var workspace = new MediaWorkspace(workspacePath);
     await PatchRegression.RunAsync(root, source, ffmpeg, settings, dependency);
+    await UxRegression.RunAsync(root, source, ffmpeg, dependency);
+    await UiRegression.RunAsync(root, source, dependency);
+    var initialTrimmer = new TrimmerViewModel(ffmpeg, settings, dependency, workspace);
+    Check(initialTrimmer.StartTimeFormatted == "--:--:--" && !initialTrimmer.SeekToStartCommand.CanExecute(null),
+        "Unloaded video must show no invented times and must disable seek");
     var vm = new ConverterViewModel(ffmpeg, settings, dependency, workspace);
     vm.IsCompressEnabled = true;
     vm.SelectedTargetFormat = "MP3";

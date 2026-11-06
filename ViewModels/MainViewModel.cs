@@ -17,6 +17,10 @@ public enum EngineUiState
 public sealed class MainViewModel : ObservableObject
 {
     public MediaWorkspace Workspace { get; }
+    public OutputLocationViewModel OutputLocation { get; }
+    private bool _isCompactNavigation;
+    public bool IsCompactNavigation { get => _isCompactNavigation; set { if (SetProperty(ref _isCompactNavigation, value)) OnPropertyChanged(nameof(NavigationWidth)); } }
+    public double NavigationWidth => IsCompactNavigation ? 64 : 232;
     public HomeViewModel HomeVm { get; }
     public DownloaderViewModel DownloaderVm { get; }
     public ConverterViewModel ConverterVm { get; }
@@ -78,9 +82,10 @@ public sealed class MainViewModel : ObservableObject
     public MainViewModel(HomeViewModel homeVm, DownloaderViewModel downloaderVm, ConverterViewModel converterVm,
         TrimmerViewModel trimmerVm, AudioTrimmerViewModel audioTrimmerVm, WorkspaceViewModel workspaceVm,
         SettingsViewModel settingsVm, DependencyService dependencies, SettingsService settings, MediaWorkspace workspace,
-        IConfirmationService confirmation)
+        IConfirmationService confirmation, OutputLocationViewModel? outputLocation = null)
     {
         Workspace = workspace;
+        OutputLocation = outputLocation ?? new OutputLocationViewModel(settings);
         HomeVm = homeVm;
         DownloaderVm = downloaderVm;
         ConverterVm = converterVm;
@@ -225,15 +230,18 @@ public sealed class MainViewModel : ObservableObject
         switch (destination)
         {
             case ToolDestination.Converter:
+                ConverterVm.InputContext = $"เปิดจากคลังงาน • {asset.SourceTool}";
                 ConverterVm.AddFiles(new[] { asset.FilePath });
                 Navigate("Converter");
                 break;
             case ToolDestination.VideoTrimmer when asset.Kind == MediaKind.Video:
                 Navigate("Trimmer");
+                TrimmerVm.InputContext = $"เปิดจากคลังงาน • {asset.SourceTool}";
                 await TrimmerVm.LoadFileAsync(asset.FilePath);
                 break;
             case ToolDestination.AudioTrimmer when asset.Kind is MediaKind.Video or MediaKind.Audio:
                 Navigate("AudioTrimmer");
+                AudioTrimmerVm.InputContext = $"เปิดจากคลังงาน • {asset.SourceTool}";
                 await AudioTrimmerVm.LoadFileAsync(asset.FilePath);
                 break;
         }

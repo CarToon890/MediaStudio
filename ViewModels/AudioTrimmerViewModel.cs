@@ -11,6 +11,8 @@ namespace MediaStudio.ViewModels;
 
 public sealed class AudioTrimmerViewModel : ObservableObject
 {
+    private string _inputContext = "เลือกไฟล์จากเครื่อง";
+    public string InputContext { get => _inputContext; set => SetProperty(ref _inputContext, value); }
 
     private readonly FFmpegService _ffmpeg;
     private readonly SettingsService _settings;
@@ -114,7 +116,7 @@ public sealed class AudioTrimmerViewModel : ObservableObject
         {
             Filter = "ไฟล์เสียงและวิดีโอ|*.mp3;*.wav;*.flac;*.m4a;*.aac;*.ogg;*.opus;*.mp4;*.mkv;*.mov;*.avi;*.webm|ไฟล์ทั้งหมด|*.*"
         };
-        if (dialog.ShowDialog() == true) await LoadFileAsync(dialog.FileName);
+        if (dialog.ShowDialog() == true) { InputContext = "เลือกไฟล์จากเครื่อง"; await LoadFileAsync(dialog.FileName); }
     }
 
     public async Task LoadFileAsync(string path)
@@ -232,12 +234,14 @@ public sealed class AudioTrimmerViewModel : ObservableObject
 
     private void OpenOutput()
     {
-        if (File.Exists(LastOutputPath)) Process.Start(new ProcessStartInfo(LastOutputPath) { UseShellExecute = true });
+        var error = ResultFileService.Open(LastOutputPath, folder: false);
+        if (!string.IsNullOrEmpty(error)) StatusText = error;
     }
 
     private void OpenOutputFolder()
     {
-        if (File.Exists(LastOutputPath)) Process.Start("explorer.exe", $"/select,\"{LastOutputPath}\"");
+        var error = ResultFileService.Open(LastOutputPath, folder: true);
+        if (!string.IsNullOrEmpty(error)) StatusText = error;
     }
 
     private void Send(ToolDestination destination)

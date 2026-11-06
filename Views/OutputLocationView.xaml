@@ -1,0 +1,11 @@
+<UserControl x:Class="MediaStudio.Views.OutputLocationView" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+ <StackPanel Margin="0,12,0,12">
+  <TextBlock Text="บันทึกไปที่…" FontWeight="SemiBold"/>
+  <Grid Margin="0,4,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+   <TextBlock Text="{Binding Path}" TextWrapping="Wrap" Margin="0,0,16,0" VerticalAlignment="Center" ToolTip="{Binding Path}"/>
+   <WrapPanel Grid.Column="1"><ui:Button MinHeight="36" FocusVisualStyle="{StaticResource KeyboardFocus}" Content="เปลี่ยน" Command="{Binding BrowseCommand}" Margin="0,0,8,0"/><ui:Button MinHeight="36" FocusVisualStyle="{StaticResource KeyboardFocus}" Content="เปิดโฟลเดอร์" Command="{Binding OpenCommand}"/></WrapPanel>
+  </Grid>
+  <TextBlock Text="ใช้ร่วมกันทุกเครื่องมือ การเปลี่ยนมีผลกับงานที่เริ่มภายหลัง" Style="{StaticResource SecondaryText}" Margin="0,8,0,0"/>
+  <TextBlock Text="{Binding Error}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" Margin="0,8,0,0" Visibility="{Binding HasError, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+ </StackPanel>
+</UserControl>

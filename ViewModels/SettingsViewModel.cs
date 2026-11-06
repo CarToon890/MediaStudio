@@ -27,19 +27,8 @@ public class SettingsViewModel : ObservableObject
     public string AppVersion => $"MediaStudio v{_currentVersion.ToString(3)}";
     public string CurrentVersionDisplay => $"เวอร์ชันปัจจุบัน {_currentVersion.ToString(3)}";
 
-    private string _downloadPath = string.Empty;
-    public string DownloadPath
-    {
-        get => _downloadPath;
-        set
-        {
-            if (SetProperty(ref _downloadPath, value))
-            {
-                _settingsService.Settings.DownloadDirectory = value;
-                _settingsService.SaveSettings();
-            }
-        }
-    }
+    public OutputLocationViewModel OutputLocation { get; }
+    public string DownloadPath { get => _settingsService.Settings.DownloadDirectory; set => OutputLocation.ChangeDirectory(value); }
 
     private bool _enableHardwareAcceleration;
     public bool EnableHardwareAcceleration
@@ -99,7 +88,7 @@ public class SettingsViewModel : ObservableObject
     public SettingsViewModel(SettingsService settingsService, DependencyService dependencyService,
         IConfirmationService confirmationService, IAppUpdateService appUpdateService,
         DownloaderViewModel downloader, ConverterViewModel converter, TrimmerViewModel trimmer,
-        AudioTrimmerViewModel audioTrimmer)
+        AudioTrimmerViewModel audioTrimmer, OutputLocationViewModel? outputLocation = null)
     {
         _settingsService = settingsService;
         _dependencyService = dependencyService;
@@ -109,11 +98,12 @@ public class SettingsViewModel : ObservableObject
         _converter = converter;
         _trimmer = trimmer;
         _audioTrimmer = audioTrimmer;
-        _downloadPath = _settingsService.Settings.DownloadDirectory;
+        OutputLocation = outputLocation ?? new OutputLocationViewModel(settingsService);
+        settingsService.OutputDirectoryChanged += () => OnPropertyChanged(nameof(DownloadPath));
         _enableHardwareAcceleration = _settingsService.Settings.EnableHardwareAcceleration;
 
-        BrowseDownloadFolderCommand = new RelayCommand(BrowseDownloadFolder);
-        OpenDownloadFolderCommand = new RelayCommand(OpenDownloadFolder);
+        BrowseDownloadFolderCommand = OutputLocation.BrowseCommand;
+        OpenDownloadFolderCommand = OutputLocation.OpenCommand;
         UpdateEnginesCommand = new AsyncRelayCommand(UpdateEnginesAsync);
         CheckAppUpdateCommand = new AsyncRelayCommand(CheckAppUpdateAsync);
         ApplyAppUpdateCommand = new AsyncRelayCommand(ApplyAppUpdateAsync);
@@ -129,22 +119,6 @@ public class SettingsViewModel : ObservableObject
             ? "ระบบดาวน์โหลดมีเดียและระบบแปลง/บีบอัดไฟล์พร้อมใช้งานแล้ว"
             : "ยังไม่ได้ดาวน์โหลดส่วนประกอบที่จำเป็น";
         OnPropertyChanged(nameof(EngineActionLabel));
-    }
-
-    private void BrowseDownloadFolder()
-    {
-        var dialog = new OpenFolderDialog { InitialDirectory = DownloadPath };
-        if (dialog.ShowDialog() == true) DownloadPath = dialog.FolderName;
-    }
-
-    private void OpenDownloadFolder()
-    {
-        try
-        {
-            if (Directory.Exists(DownloadPath))
-                Process.Start(new ProcessStartInfo { FileName = DownloadPath, UseShellExecute = true });
-        }
-        catch { }
     }
 
     private async Task UpdateEnginesAsync()
